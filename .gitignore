@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+build/
+
+# CDK
+infra/cdk.out/
+
+# Web
+web/.env.*
+!web/.env.example
+
+# Playwright / e2e
+e2e/test-results/
+e2e/playwright-report/
+e2e/.auth/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.idea/
+*.swp

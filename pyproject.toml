@@ -1,0 +1,66 @@
+[project]
+name = "chat-with-docs"
+version = "0.1.0"
+description = "Autonomous workflow entry points (cwd-check, cwd-eval, cwd-reindex) for the chat-with-docs uv workspace."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+cwd-check = "scripts.cwd_check:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts"]
+
+[dependency-groups]
+dev = [
+    "cwd-common",
+    "cwd-api",
+    "cwd-ingestion",
+    "cwd-answering",
+    "ruff>=0.9,<0.10",
+    "mypy>=1.14,<1.15",
+    "pytest>=8.3,<8.4",
+    "pytest-asyncio>=0.25,<0.26",
+    "pytest-cov>=6.0,<6.1",
+    "moto[dynamodb,s3,sqs,stepfunctions]>=5.0,<6.0",
+]
+
+[tool.uv.workspace]
+members = ["services/*"]
+
+[tool.uv.sources]
+cwd-common = { workspace = true }
+cwd-api = { workspace = true }
+cwd-ingestion = { workspace = true }
+cwd-answering = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["services", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "boto3.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: needs a deployed dev stack and credentials; opt in with CWD_INTEGRATION=1",
+    "contract: needs real AWS credentials (no deployed stack); pins third-party API shapes",
+]
+addopts = "-m 'not integration and not contract'"
+testpaths = ["services", "scripts"]
+python_files = ["test_*.py", "smoke_*.py"]
+asyncio_default_fixture_loop_scope = "function"
