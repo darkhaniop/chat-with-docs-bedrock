@@ -143,7 +143,7 @@ against Cost Explorer after the first month.
 | Bedrock — Haiku 4.5 rewrite | ~1k in / 50 out × 2000 | negligible |
 | Bedrock — Nova embeddings | ~200 vectors/doc × 500 docs + 2000 queries | small |
 | Textract | OCR pages only; ~15% of pages | small |
-| Lambda | arm64, ingest-dominated | small |
+| Lambda | x86_64, ingest-dominated | small |
 | Step Functions Standard | ~5 + pageCount transitions per document | small |
 | DynamoDB on-demand | chunk writes dominate | small |
 | S3 storage | originals + two renders per page | small, grows monotonically |

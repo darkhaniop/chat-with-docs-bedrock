@@ -236,14 +236,14 @@ sequenceDiagram
 
 ## Compute packaging
 
-All Python Lambdas are **container images on arm64**, built from one shared base image
+All Python Lambdas are **container images on x86_64**, built from one shared base image
 (`services/Dockerfile`) with dependencies installed by uv, each function selecting its own
 handler via `CMD`. Rationale:
 
 - PyMuPDF and Pillow are large native wheels; zip bundling for them is fragile.
 - One image, one dependency resolution, one lockfile — a mixed zip/image setup means two ways
   to be wrong about dependencies.
-- arm64 (Graviton) is cheaper per GB-second and every dependency in the stack has arm64 wheels.
+- x86_64 only, everywhere — no arm64 in development, testing, or deployment.
 
 The cost is a Docker build in the deploy loop and slightly larger cold starts. This is
 acceptable: the API Lambda is the only latency-sensitive one, and its cold start is dominated
