@@ -38,6 +38,18 @@ exports[`CwdAuthStack matches the committed template snapshot 1`] = `
     },
   },
   "Resources": {
+    "ManagedLoginBranding": {
+      "Properties": {
+        "ClientId": {
+          "Ref": "UserPoolWebClient4C9370B0",
+        },
+        "UseCognitoProvidedValues": true,
+        "UserPoolId": {
+          "Ref": "UserPool6BA7E5F2",
+        },
+      },
+      "Type": "AWS::Cognito::ManagedLoginBranding",
+    },
     "UserPool6BA7E5F2": {
       "DeletionPolicy": "Retain",
       "Properties": {

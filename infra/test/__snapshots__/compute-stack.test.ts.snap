@@ -149,6 +149,19 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
     },
     "HttpApiF5A9A8A7": {
       "Properties": {
+        "CorsConfiguration": {
+          "AllowHeaders": [
+            "Authorization",
+            "Content-Type",
+          ],
+          "AllowMethods": [
+            "GET",
+          ],
+          "AllowOrigins": [
+            "https://d111111abcdef8.cloudfront.net",
+            "http://localhost:5173",
+          ],
+        },
         "Name": "cwd-dev-api",
         "ProtocolType": "HTTP",
       },

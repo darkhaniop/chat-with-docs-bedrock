@@ -16,6 +16,7 @@ export interface CwdComputeStackProps extends StackProps {
   readonly env2: string;
   readonly userPoolClientId: string;
   readonly userPoolIssuer: string;
+  readonly webDistributionDomainName: string;
 }
 
 /** The deployed commit, for `/health` (it's how drift between `main` and the deployed stack is
@@ -77,6 +78,13 @@ export class CwdComputeStack extends Stack {
     this.api = new apigwv2.HttpApi(this, "HttpApi", {
       apiName: `cwd-${props.env2}-api`,
       createDefaultStage: true,
+      // The SPA is a browser client on a different origin (CloudFront) from the API
+      // (execute-api).
+      corsPreflight: {
+        allowOrigins: [`https://${props.webDistributionDomainName}`, "http://localhost:5173"],
+        allowMethods: [apigwv2.CorsHttpMethod.GET],
+        allowHeaders: ["Authorization", "Content-Type"],
+      },
     });
 
     const jwtAuthorizer = new HttpJwtAuthorizer("JwtAuthorizer", props.userPoolIssuer, {

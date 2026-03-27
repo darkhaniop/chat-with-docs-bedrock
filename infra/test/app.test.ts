@@ -32,6 +32,7 @@ describe("the full app", () => {
       env: cdkEnv,
       userPoolClientId: authStack.userPoolClient.userPoolClientId,
       userPoolIssuer: `https://cognito-idp.${cdkEnv.region}.amazonaws.com/${authStack.userPool.userPoolId}`,
+      webDistributionDomainName: webStack.distribution.domainName,
     });
 
     expect(() => app.synth()).not.toThrow();

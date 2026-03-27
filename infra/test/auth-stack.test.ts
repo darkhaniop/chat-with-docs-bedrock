@@ -48,6 +48,13 @@ describe("CwdAuthStack", () => {
     });
   });
 
+  it("assigns a branding style to the app client — required for NEWER_MANAGED_LOGIN, or the hosted login pages 403", () => {
+    const template = synth();
+    template.hasResourceProperties("AWS::Cognito::ManagedLoginBranding", {
+      UseCognitoProvidedValues: true,
+    });
+  });
+
   it("matches the committed template snapshot", () => {
     expect(synth().toJSON()).toMatchSnapshot();
   });

@@ -70,6 +70,15 @@ export class CwdAuthStack extends Stack {
       managedLoginVersion: cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
     });
 
+    // Required for NEWER_MANAGED_LOGIN specifically: without a branding style assigned to the
+    // app client, the hosted login pages 403 with "Login pages unavailable. Please contact an
+    // administrator." — the L2 `addDomain` only creates the domain, not this.
+    new cognito.CfnManagedLoginBranding(this, "ManagedLoginBranding", {
+      userPoolId: this.userPool.userPoolId,
+      clientId: this.userPoolClient.userPoolClientId,
+      useCognitoProvidedValues: true,
+    });
+
     new CfnOutput(this, "UserPoolId", { value: this.userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: this.userPoolClient.userPoolClientId });
     new CfnOutput(this, "UserPoolIssuer", {

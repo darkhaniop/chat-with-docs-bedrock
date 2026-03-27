@@ -47,4 +47,5 @@ new CwdComputeStack(app, stackName(env2, "Compute"), {
   env: cdkEnv,
   userPoolClientId: authStack.userPoolClient.userPoolClientId,
   userPoolIssuer: `https://cognito-idp.${cdkEnv.region}.amazonaws.com/${authStack.userPool.userPoolId}`,
+  webDistributionDomainName: webStack.distribution.domainName,
 });

@@ -20,6 +20,7 @@ beforeAll(() => {
     env: { account: "123456789012", region: "us-east-1" },
     userPoolClientId: "test-client-id",
     userPoolIssuer: "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_test",
+    webDistributionDomainName: "d111111abcdef8.cloudfront.net",
   });
   template = Template.fromStack(stack);
 });
@@ -93,6 +94,18 @@ describe("CwdComputeStack", () => {
       dockerFile: "services/Dockerfile",
       dockerBuildArgs: { SERVICE: "api" },
       platform: "linux/amd64",
+    });
+  });
+
+  it("allows CORS from the CloudFront origin and localhost dev, with Authorization allowed", () => {
+    template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
+      CorsConfiguration: {
+        AllowOrigins: Match.arrayWith([
+          "https://d111111abcdef8.cloudfront.net",
+          "http://localhost:5173",
+        ]),
+        AllowHeaders: Match.arrayWith(["Authorization"]),
+      },
     });
   });
 
