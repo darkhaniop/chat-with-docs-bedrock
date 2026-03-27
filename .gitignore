@@ -18,6 +18,7 @@ build/
 
 # CDK
 infra/cdk.out/
+infra/cdk-outputs.*.json
 
 # Web
 web/.env.*

@@ -7,6 +7,7 @@ dependencies = [
     "boto3>=1.35",
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
+    "aws-lambda-powertools>=3.4,<4",
 ]
 
 [build-system]

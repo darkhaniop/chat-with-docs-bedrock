@@ -60,7 +60,13 @@ markers = [
     "integration: needs a deployed dev stack and credentials; opt in with CWD_INTEGRATION=1",
     "contract: needs real AWS credentials (no deployed stack); pins third-party API shapes",
 ]
-addopts = "-m 'not integration and not contract'"
+# --import-mode=importlib: every service package has its own `tests/__init__.py` (so each
+# service's tests import cleanly as `tests.foo` from *within* that package), but that means the
+# same top-level module name `tests` is reused across services/{answering,api,common,ingestion}.
+# The default "prepend" import mode caches the first one it sees in sys.modules and every other
+# service's `tests.*` import then resolves against the wrong directory. importlib mode imports
+# each test file by its own file path instead of relying on a shared sys.path/sys.modules entry.
+addopts = "-m 'not integration and not contract' --import-mode=importlib"
 testpaths = ["services", "scripts"]
 python_files = ["test_*.py", "smoke_*.py"]
 asyncio_default_fixture_loop_scope = "function"
