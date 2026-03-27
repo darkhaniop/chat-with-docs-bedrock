@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { App } from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
+import { Match, Template } from "aws-cdk-lib/assertions";
 import { CwdComputeStack } from "../lib/compute-stack";
 
 // Building `CwdComputeStack` stages a Docker build-context asset (services/Dockerfile +
@@ -96,7 +96,24 @@ describe("CwdComputeStack", () => {
     });
   });
 
+  it("sets CWD_COMMIT to the current git commit for /health drift detection (ADR-008)", () => {
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      Environment: {
+        Variables: {
+          CWD_COMMIT: Match.stringLikeRegexp("^[0-9a-f]{40}$"),
+        },
+      },
+    });
+  });
+
   it("matches the committed template snapshot", () => {
-    expect(template.toJSON()).toMatchSnapshot();
+    // CWD_COMMIT is `git rev-parse HEAD` at synth time (compute-stack.ts) — it changes on
+    // every commit by design (ADR-008), so it's redacted here rather than asserted verbatim;
+    // its shape is covered by the dedicated test above instead.
+    const redacted = JSON.stringify(template.toJSON()).replace(
+      /"CWD_COMMIT":"[0-9a-f]{40}"/g,
+      '"CWD_COMMIT":"<commit-sha>"',
+    );
+    expect(JSON.parse(redacted)).toMatchSnapshot();
   });
 });

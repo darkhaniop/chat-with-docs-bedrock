@@ -35,7 +35,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         },
         "Environment": {
           "Variables": {
-            "CWD_COMMIT": "9a6eea68c0e27f062d11fa0a45a9efe8560ac0b1",
+            "CWD_COMMIT": "<commit-sha>",
             "CWD_ENV": "dev",
             "CWD_VERSION": "0.1.0",
           },

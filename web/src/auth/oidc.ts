@@ -34,9 +34,11 @@ export const userManager = new UserManager({
 });
 
 /**
- * Cognito's OIDC discovery document has no `end_session_endpoint` (it does not implement
- * RP-initiated logout), so sign-out is a direct redirect to the Managed Login domain's own
- * `/logout` endpoint rather than `userManager.signoutRedirect()`.
+ * Cognito's discovery document does advertise a standard `end_session_endpoint`, but the
+ * Managed Login domain's own `/logout?client_id=...&logout_uri=...` form is what AWS documents
+ * for the hosted UI specifically, and `logout_uri` is checked against the same "Allowed
+ * sign-out URLs" list as the OAuth `logoutUrls` registered on the app client — so a direct
+ * redirect here is used instead of `userManager.signoutRedirect()`.
  */
 export function signOutRedirect(): void {
   const url = new URL(`https://${cognitoDomain}/logout`);
