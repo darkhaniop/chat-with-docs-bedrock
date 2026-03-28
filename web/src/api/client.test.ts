@@ -53,3 +53,65 @@ describe("apiFetch", () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe("apiJson", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    getUser.mockReset();
+  });
+
+  it("returns the parsed JSON body on success", async () => {
+    getUser.mockResolvedValue(null);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+
+    const { apiJson } = await import("./client");
+    await expect(apiJson<{ ok: boolean }>("/projects")).resolves.toEqual({ ok: true });
+  });
+
+  it("sets Content-Type when a body is given", async () => {
+    getUser.mockResolvedValue(null);
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { apiJson } = await import("./client");
+    await apiJson("/projects", { method: "POST", body: JSON.stringify({ name: "x" }) });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Headers).get("Content-Type")).toBe("application/json");
+  });
+
+  it("throws ApiError with the code/message from the error envelope on a non-2xx response", async () => {
+    getUser.mockResolvedValue(null);
+    const body = { error: { code: "VALIDATION_ERROR", message: "`name` is required." } };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(new Response(JSON.stringify(body), { status: 400 })),
+        ),
+    );
+
+    const { apiJson } = await import("./client");
+    const { ApiError } = await import("./errors");
+
+    const error = await apiJson("/projects", { method: "POST" }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 400,
+      code: "VALIDATION_ERROR",
+      message: "`name` is required.",
+    });
+  });
+
+  it("returns undefined for a 204 response", async () => {
+    getUser.mockResolvedValue(null);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+
+    const { apiJson } = await import("./client");
+    await expect(apiJson("/conversations/1")).resolves.toBeUndefined();
+  });
+});

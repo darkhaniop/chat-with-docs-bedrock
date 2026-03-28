@@ -1,4 +1,6 @@
 import { apiBase, userManager } from "../auth/oidc";
+import { ApiError } from "./errors";
+import type { ApiErrorBody } from "./types";
 
 /**
  * docs/06-frontend.md#authentication: on 401, redirect to login. It never retries a 401 in a
@@ -15,6 +17,24 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     await userManager.signinRedirect();
   }
   return response;
+}
+
+/** JSON in, JSON out, throwing `ApiError` on any non-2xx response (docs/05-api-contracts.md's
+ * error envelope) — the shape every TanStack Query hook in `api/hooks/` is built on. */
+export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body !== undefined) {
+    headers.set("Content-Type", "application/json");
+  }
+  const response = await apiFetch(path, { ...init, headers });
+  if (!response.ok) {
+    const body = (await response.json()) as ApiErrorBody;
+    throw new ApiError(response.status, body);
+  }
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
 }
 
 async function authHeaders(base?: HeadersInit): Promise<Headers> {

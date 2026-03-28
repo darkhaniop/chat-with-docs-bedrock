@@ -47,11 +47,15 @@ export class CwdAuthStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    // Public client, PKCE, no secret.
+    // Public client, PKCE, no secret. `adminUserPassword` is the one exception:
+    // ADMIN_USER_PASSWORD_AUTH is gated by the *caller's* IAM permissions
+    // (cognito-idp:AdminInitiateAuth), not by anything a browser can invoke — enabling it doesn't
+    // weaken the SPA's PKCE-only posture, and it's what lets integration tests and the seeded
+    // e2e user obtain a real token without a browser.
     this.userPoolClient = this.userPool.addClient("WebClient", {
       userPoolClientName: `cwd-${props.env2}-web`,
       generateSecret: false,
-      authFlows: { userSrp: false, adminUserPassword: false, custom: false, userPassword: false },
+      authFlows: { userSrp: false, adminUserPassword: true, custom: false, userPassword: false },
       oAuth: {
         flows: { authorizationCodeGrant: true },
         scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],

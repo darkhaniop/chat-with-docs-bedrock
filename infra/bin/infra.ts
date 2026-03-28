@@ -28,12 +28,20 @@ const account = process.env.CDK_DEFAULT_ACCOUNT;
 const region = process.env.CDK_DEFAULT_REGION ?? "us-east-1";
 const cdkEnv = account !== undefined ? { account, region } : { region };
 
-new CwdDataStack(app, stackName(env2, "Data"), { env2, env: cdkEnv });
-
 const webStack = new CwdWebStack(app, stackName(env2, "Web"), {
   env2,
   env: cdkEnv,
   siteContentDir,
+});
+
+// Created after CwdWebStack because both CwdDataStack (documents bucket CORS) and
+// CwdAuthStack (Cognito callback/logout URLs) need its CloudFront domain — CDK resolves the
+// cross-stack reference via a native export regardless of construction order, but the value
+// itself has to already exist as a property on webStack by this point.
+const dataStack = new CwdDataStack(app, stackName(env2, "Data"), {
+  env2,
+  env: cdkEnv,
+  webDistributionDomainName: webStack.distribution.domainName,
 });
 
 const authStack = new CwdAuthStack(app, stackName(env2, "Auth"), {
@@ -48,4 +56,6 @@ new CwdComputeStack(app, stackName(env2, "Compute"), {
   userPoolClientId: authStack.userPoolClient.userPoolClientId,
   userPoolIssuer: `https://cognito-idp.${cdkEnv.region}.amazonaws.com/${authStack.userPool.userPoolId}`,
   webDistributionDomainName: webStack.distribution.domainName,
+  table: dataStack.table,
+  documentsBucket: dataStack.documentsBucket,
 });

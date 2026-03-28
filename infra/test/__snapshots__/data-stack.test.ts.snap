@@ -23,6 +23,45 @@ exports[`CwdDataStack matches the committed template snapshot 1`] = `
           ],
         },
         "BucketName": "cwd-documents-dev-123456789012",
+        "CorsConfiguration": {
+          "CorsRules": [
+            {
+              "AllowedHeaders": [
+                "Content-Type",
+              ],
+              "AllowedMethods": [
+                "PUT",
+                "GET",
+              ],
+              "AllowedOrigins": [
+                "https://d111111abcdef8.cloudfront.net",
+                "http://localhost:5173",
+              ],
+            },
+          ],
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "artifacts-to-ia",
+              "Prefix": "artifacts/",
+              "Status": "Enabled",
+              "Transitions": [
+                {
+                  "StorageClass": "STANDARD_IA",
+                  "TransitionInDays": 30,
+                },
+              ],
+            },
+            {
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 1,
+              },
+              "Id": "abort-incomplete-multipart-uploads",
+              "Status": "Enabled",
+            },
+          ],
+        },
         "PublicAccessBlockConfiguration": {
           "BlockPublicAcls": true,
           "BlockPublicPolicy": true,

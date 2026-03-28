@@ -13,6 +13,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.102.8",
     "clsx": "^2.1.1",
     "oidc-client-ts": "^3.5.0",
     "react": "^19.2.8",

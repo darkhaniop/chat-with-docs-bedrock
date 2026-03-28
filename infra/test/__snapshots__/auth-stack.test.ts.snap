@@ -133,6 +133,7 @@ exports[`CwdAuthStack matches the committed template snapshot 1`] = `
         ],
         "ClientName": "cwd-dev-web",
         "ExplicitAuthFlows": [
+          "ALLOW_ADMIN_USER_PASSWORD_AUTH",
           "ALLOW_REFRESH_TOKEN_AUTH",
         ],
         "GenerateSecret": false,

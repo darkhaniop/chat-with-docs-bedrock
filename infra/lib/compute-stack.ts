@@ -6,9 +6,13 @@ import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecrAssets from "aws-cdk-lib/aws-ecr-assets";
+import * as events from "aws-cdk-lib/aws-events";
+import * as eventsTargets from "aws-cdk-lib/aws-events-targets";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as s3 from "aws-cdk-lib/aws-s3";
 import type { Construct } from "constructs";
 import { dashboardName } from "./naming";
 
@@ -17,6 +21,8 @@ export interface CwdComputeStackProps extends StackProps {
   readonly userPoolClientId: string;
   readonly userPoolIssuer: string;
   readonly webDistributionDomainName: string;
+  readonly table: dynamodb.ITableV2;
+  readonly documentsBucket: s3.IBucket;
 }
 
 /** The deployed commit, for `/health` (it's how drift between `main` and the deployed stack is
@@ -42,6 +48,7 @@ function currentVersion(repoRoot: string): string {
 export class CwdComputeStack extends Stack {
   public readonly api: apigwv2.HttpApi;
   public readonly apiFunction: lambda.DockerImageFunction;
+  public readonly sweeperFunction: lambda.DockerImageFunction;
 
   constructor(scope: Construct, id: string, props: CwdComputeStackProps) {
     super(scope, id, props);
@@ -50,7 +57,21 @@ export class CwdComputeStack extends Stack {
     // services/Dockerfile COPYs services/common alongside services/api.
     const repoRoot = path.join(__dirname, "..", "..");
 
-    const logGroup = new logs.LogGroup(this, "ApiLogGroup", {
+    const apiImageCode = lambda.DockerImageCode.fromImageAsset(repoRoot, {
+      file: "services/Dockerfile",
+      buildArgs: { SERVICE: "api" },
+      platform: ecrAssets.Platform.LINUX_AMD64,
+      cmd: ["api.handler.lambda_handler"],
+    });
+
+    const sharedEnvironment = {
+      CWD_ENV: props.env2,
+      CWD_VERSION: currentVersion(repoRoot),
+      CWD_COMMIT: currentCommit(),
+      CWD_DOCUMENTS_BUCKET_NAME: props.documentsBucket.bucketName,
+    };
+
+    const apiLogGroup = new logs.LogGroup(this, "ApiLogGroup", {
       logGroupName: `/aws/lambda/cwd-${props.env2}-api`,
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: RemovalPolicy.DESTROY,
@@ -58,21 +79,43 @@ export class CwdComputeStack extends Stack {
 
     this.apiFunction = new lambda.DockerImageFunction(this, "ApiFunction", {
       functionName: `cwd-${props.env2}-api`,
+      code: apiImageCode,
+      architecture: lambda.Architecture.X86_64,
+      memorySize: 512,
+      timeout: Duration.seconds(10),
+      logGroup: apiLogGroup,
+      environment: sharedEnvironment,
+    });
+    this._grantApiPermissions(this.apiFunction, props);
+
+    // A `PENDING` document whose client never called `:ingest` is swept daily rather than by a
+    // bucket lifecycle rule, because the rule can't see DynamoDB state. Shares the `api` image
+    // (same CMD-selects-handler convention as every other Lambda in this project) but gets its
+    // own role, log group, and function.
+    const sweeperLogGroup = new logs.LogGroup(this, "SweeperLogGroup", {
+      logGroupName: `/aws/lambda/cwd-${props.env2}-document-sweeper`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    this.sweeperFunction = new lambda.DockerImageFunction(this, "SweeperFunction", {
+      functionName: `cwd-${props.env2}-document-sweeper`,
       code: lambda.DockerImageCode.fromImageAsset(repoRoot, {
         file: "services/Dockerfile",
         buildArgs: { SERVICE: "api" },
         platform: ecrAssets.Platform.LINUX_AMD64,
-        cmd: ["api.handler.lambda_handler"],
+        cmd: ["api.sweeper.lambda_handler"],
       }),
       architecture: lambda.Architecture.X86_64,
       memorySize: 512,
-      timeout: Duration.seconds(10),
-      logGroup,
-      environment: {
-        CWD_ENV: props.env2,
-        CWD_VERSION: currentVersion(repoRoot),
-        CWD_COMMIT: currentCommit(),
-      },
+      timeout: Duration.minutes(5),
+      logGroup: sweeperLogGroup,
+      environment: sharedEnvironment,
+    });
+    this._grantSweeperPermissions(this.sweeperFunction, props);
+
+    new events.Rule(this, "SweeperSchedule", {
+      schedule: events.Schedule.rate(Duration.days(1)),
+      targets: [new eventsTargets.LambdaFunction(this.sweeperFunction)],
     });
 
     this.api = new apigwv2.HttpApi(this, "HttpApi", {
@@ -82,7 +125,12 @@ export class CwdComputeStack extends Stack {
       // (execute-api).
       corsPreflight: {
         allowOrigins: [`https://${props.webDistributionDomainName}`, "http://localhost:5173"],
-        allowMethods: [apigwv2.CorsHttpMethod.GET],
+        allowMethods: [
+          apigwv2.CorsHttpMethod.GET,
+          apigwv2.CorsHttpMethod.POST,
+          apigwv2.CorsHttpMethod.PATCH,
+          apigwv2.CorsHttpMethod.DELETE,
+        ],
         allowHeaders: ["Authorization", "Content-Type"],
       },
     });
@@ -93,18 +141,27 @@ export class CwdComputeStack extends Stack {
 
     const integration = new HttpLambdaIntegration("ApiIntegration", this.apiFunction);
 
-    this.api.addRoutes({
-      path: "/health",
-      methods: [apigwv2.HttpMethod.GET],
-      integration,
-    });
+    this.api.addRoutes({ path: "/health", methods: [apigwv2.HttpMethod.GET], integration });
 
-    this.api.addRoutes({
-      path: "/echo",
-      methods: [apigwv2.HttpMethod.GET],
-      integration,
-      authorizer: jwtAuthorizer,
-    });
+    const authenticatedRoutes: Array<[string, apigwv2.HttpMethod]> = [
+      ["/projects", apigwv2.HttpMethod.POST],
+      ["/projects", apigwv2.HttpMethod.GET],
+      ["/projects/{projectId}", apigwv2.HttpMethod.GET],
+      ["/projects/{projectId}", apigwv2.HttpMethod.PATCH],
+      ["/projects/{projectId}", apigwv2.HttpMethod.DELETE],
+      ["/projects/{projectId}/documents", apigwv2.HttpMethod.POST],
+      ["/projects/{projectId}/documents", apigwv2.HttpMethod.GET],
+      ["/projects/{projectId}/documents/{documentId}", apigwv2.HttpMethod.GET],
+      ["/projects/{projectId}/documents/{documentId}", apigwv2.HttpMethod.DELETE],
+      ["/projects/{projectId}/documents/{documentId}/source-url", apigwv2.HttpMethod.GET],
+      [
+        "/projects/{projectId}/documents/{documentId}/pages/{page}/render-url",
+        apigwv2.HttpMethod.GET,
+      ],
+    ];
+    for (const [routePath, method] of authenticatedRoutes) {
+      this.api.addRoutes({ path: routePath, methods: [method], integration, authorizer: jwtAuthorizer });
+    }
 
     new cloudwatch.Dashboard(this, "Dashboard", {
       dashboardName: dashboardName(props.env2),
@@ -123,5 +180,23 @@ export class CwdComputeStack extends Stack {
     });
 
     new CfnOutput(this, "ApiBaseUrl", { value: this.api.apiEndpoint });
+  }
+
+  private _grantApiPermissions(fn: lambda.IFunction, props: CwdComputeStackProps): void {
+    props.table.grantReadWriteData(fn);
+    props.table.grant(fn, "dynamodb:TransactWriteItems");
+    for (const prefix of ["raw/*", "pages/*"]) {
+      props.documentsBucket.grantReadWrite(fn, prefix);
+      props.documentsBucket.grantDelete(fn, prefix);
+    }
+  }
+
+  private _grantSweeperPermissions(fn: lambda.IFunction, props: CwdComputeStackProps): void {
+    props.table.grantReadWriteData(fn);
+    props.table.grant(fn, "dynamodb:TransactWriteItems");
+    for (const prefix of ["raw/*", "pages/*"]) {
+      props.documentsBucket.grantRead(fn, prefix);
+      props.documentsBucket.grantDelete(fn, prefix);
+    }
   }
 }

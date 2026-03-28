@@ -7,6 +7,7 @@ function synth(): Template {
   const stack = new CwdDataStack(app, "TestDataStack", {
     env2: "dev",
     env: { account: "123456789012", region: "us-east-1" },
+    webDistributionDomainName: "d111111abcdef8.cloudfront.net",
   });
   return Template.fromStack(stack);
 }
@@ -59,6 +60,42 @@ describe("CwdDataStack", () => {
     template.hasResource("AWS::S3::Bucket", {
       DeletionPolicy: "Retain",
       Properties: Match.objectLike({ BucketName: "cwd-documents-dev-123456789012" }),
+    });
+  });
+
+  it("allows the documents bucket's CORS from the CloudFront origin and localhost only", () => {
+    const template = synth();
+    template.hasResourceProperties("AWS::S3::Bucket", {
+      BucketName: "cwd-documents-dev-123456789012",
+      CorsConfiguration: {
+        CorsRules: Match.arrayWith([
+          Match.objectLike({
+            AllowedOrigins: Match.arrayWith([
+              "https://d111111abcdef8.cloudfront.net",
+              "http://localhost:5173",
+            ]),
+            AllowedMethods: Match.arrayWith(["PUT", "GET"]),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("transitions artifacts/ to Infrequent Access after 30 days and aborts stale multipart uploads", () => {
+    const template = synth();
+    template.hasResourceProperties("AWS::S3::Bucket", {
+      BucketName: "cwd-documents-dev-123456789012",
+      LifecycleConfiguration: {
+        Rules: Match.arrayWith([
+          Match.objectLike({
+            Prefix: "artifacts/",
+            Transitions: Match.arrayWith([
+              Match.objectLike({ StorageClass: "STANDARD_IA", TransitionInDays: 30 }),
+            ]),
+          }),
+          Match.objectLike({ AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 } }),
+        ]),
+      },
     });
   });
 

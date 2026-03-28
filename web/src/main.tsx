@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { AppProviders } from "./app/providers";
 import { AuthProvider } from "./auth/useAuth";
 import "./index.css";
 
@@ -11,8 +12,10 @@ if (container === null) {
 
 createRoot(container).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <AppProviders>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </AppProviders>
   </StrictMode>,
 );

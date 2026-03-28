@@ -40,6 +40,20 @@ describe("CwdAuthStack", () => {
     });
   });
 
+  it("enables ADMIN_USER_PASSWORD_AUTH (IAM-gated, for test tooling) but no browser-usable password flow", () => {
+    const template = synth();
+    template.hasResourceProperties("AWS::Cognito::UserPoolClient", {
+      ExplicitAuthFlows: Match.arrayWith(["ALLOW_ADMIN_USER_PASSWORD_AUTH"]),
+    });
+    const clients = template.findResources("AWS::Cognito::UserPoolClient");
+    for (const client of Object.values(clients)) {
+      const flows: string[] = client.Properties.ExplicitAuthFlows ?? [];
+      expect(flows).not.toContain("ALLOW_USER_PASSWORD_AUTH");
+      expect(flows).not.toContain("ALLOW_USER_SRP_AUTH");
+      expect(flows).not.toContain("ALLOW_CUSTOM_AUTH");
+    }
+  });
+
   it("creates a Managed Login domain", () => {
     const template = synth();
     template.hasResourceProperties("AWS::Cognito::UserPoolDomain", {

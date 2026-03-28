@@ -15,12 +15,16 @@ describe("the full app", () => {
     const env2 = "dev";
     const cdkEnv = { account: "123456789012", region: "us-east-1" };
 
-    new CwdDataStack(app, stackName(env2, "Data"), { env2, env: cdkEnv });
     const siteContentDir = path.join(__dirname, "..", "assets", "web-placeholder");
     const webStack = new CwdWebStack(app, stackName(env2, "Web"), {
       env2,
       env: cdkEnv,
       siteContentDir,
+    });
+    const dataStack = new CwdDataStack(app, stackName(env2, "Data"), {
+      env2,
+      env: cdkEnv,
+      webDistributionDomainName: webStack.distribution.domainName,
     });
     const authStack = new CwdAuthStack(app, stackName(env2, "Auth"), {
       env2,
@@ -33,6 +37,8 @@ describe("the full app", () => {
       userPoolClientId: authStack.userPoolClient.userPoolClientId,
       userPoolIssuer: `https://cognito-idp.${cdkEnv.region}.amazonaws.com/${authStack.userPool.userPoolId}`,
       webDistributionDomainName: webStack.distribution.domainName,
+      table: dataStack.table,
+      documentsBucket: dataStack.documentsBucket,
     });
 
     expect(() => app.synth()).not.toThrow();
