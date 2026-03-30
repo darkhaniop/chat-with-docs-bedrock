@@ -8,6 +8,7 @@ dependencies = [
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
     "aws-lambda-powertools>=3.4,<4",
+    "python-ulid>=2,<3",
 ]
 
 [build-system]

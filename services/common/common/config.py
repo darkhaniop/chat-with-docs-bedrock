@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     # Presigned URLs (docs/07-security.md#data-protection)
     presigned_url_ttl_seconds: int = 900
 
+    # Orphan-upload sweeper (docs/02-data-model.md#s3-layout): a PENDING document whose client
+    # never called `:ingest` is swept after this many hours, not by a bucket lifecycle rule,
+    # because the rule can't see DynamoDB state.
+    orphan_upload_staleness_hours: int = 24
+
     # Concurrency (docs/07-security.md#abuse-and-cost-controls)
     answering_reserved_concurrency: int = 10
     ingestion_reserved_concurrency: int = 25
