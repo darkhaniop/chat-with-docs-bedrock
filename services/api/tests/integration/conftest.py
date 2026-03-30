@@ -28,6 +28,17 @@ import pytest
 _E2E_ENV_FILE = Path(__file__).resolve().parents[4] / "e2e" / "fixtures" / ".env"
 
 
+@pytest.fixture(autouse=True)
+def aws_stack() -> Iterator[None]:
+    """Overrides `services/api/tests/conftest.py`'s autouse `aws_stack` fixture, which wraps
+    every test in a moto `mock_aws()` context — pytest's autouse fixtures cascade into
+    subdirectories, so without this override, integration tests would have their real AWS calls
+    silently intercepted by moto instead of hitting the deployed stack (and would then fail
+    trying to load moto's `cognitoidp` backend, which needs the `joserfc` extra this workspace
+    never installs since nothing else needs a mocked Cognito)."""
+    yield
+
+
 def _load_e2e_env_file() -> dict[str, str]:
     if not _E2E_ENV_FILE.exists():
         return {}
