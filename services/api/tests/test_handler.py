@@ -320,3 +320,106 @@ def test_render_url_returns_a_presigned_get_for_a_valid_page() -> None:
     )
     assert status == 200
     assert "expiresAt" in body
+
+
+def _ingest(project_id: str, document_id: str, **kwargs: Any) -> tuple[int, dict[str, Any]]:
+    return _call(
+        _event(
+            "POST /projects/{projectId}/documents/{documentId}:ingest",
+            path_parameters={"projectId": project_id, "documentId": document_id},
+            **kwargs,
+        )
+    )
+
+
+def test_ingest_starts_an_execution_and_flips_status_to_processing() -> None:
+    project = _create_project()
+    document = _upload_document(project["projectId"])["document"]
+
+    status, body = _ingest(project["projectId"], document["documentId"])
+
+    assert status == 202
+    assert body["executionArn"].startswith("arn:aws:states:")
+
+    status, refreshed = _call(
+        _event(
+            "GET /projects/{projectId}/documents/{documentId}",
+            path_parameters={
+                "projectId": project["projectId"],
+                "documentId": document["documentId"],
+            },
+        )
+    )
+    assert refreshed["status"] == "PROCESSING"
+
+
+def test_ingest_twice_in_a_row_returns_409() -> None:
+    project = _create_project()
+    document = _upload_document(project["projectId"])["document"]
+
+    first_status, _ = _ingest(project["projectId"], document["documentId"])
+    second_status, second_body = _ingest(project["projectId"], document["documentId"])
+
+    assert first_status == 202
+    assert second_status == 409
+    assert second_body["error"]["code"] == "INGEST_IN_PROGRESS"
+
+
+def test_ingest_under_someone_elses_document_is_404() -> None:
+    project = _create_project()
+    document = _upload_document(project["projectId"])["document"]
+
+    status, _ = _ingest(project["projectId"], document["documentId"], claims=_OTHER_CLAIMS)
+
+    assert status == 404
+
+
+def test_reingesting_a_ready_document_sweeps_prior_pages_chunks_and_chunk_count() -> None:
+    from api import deps
+    from common.models import Chunk, DocumentIngestion, Page, Sentence
+
+    project = _create_project()
+    document = _upload_document(project["projectId"])["document"]
+    project_id, document_id = project["projectId"], document["documentId"]
+
+    repo = deps.get_repo()
+    repo.put_page(
+        Page(
+            document_id=document_id,
+            page_number=1,
+            width=612.0,
+            height=792.0,
+            text_source="pdf",
+            text_density=0.5,
+        )
+    )
+    repo.batch_write_chunks(
+        [
+            Chunk(
+                chunk_id="c1",
+                document_id=document_id,
+                project_id=project_id,
+                page_number=1,
+                ordinal=0,
+                text="Some chunk text.",
+                sentences=[Sentence(i=0, text="Some chunk text.", rects=[(0.0, 0.0, 1.0, 1.0)])],
+                token_estimate=5,
+                created_at="2026-01-01T00:00:00Z",
+            )
+        ]
+    )
+    repo.increment_chunk_count(project_id, by=1)
+    repo.update_document(
+        document_id,
+        status="READY",
+        ingestion=DocumentIngestion(chunk_count=1, ocr_pages=0),
+    )
+
+    status, body = _ingest(project_id, document_id)
+
+    assert status == 202
+    assert repo.get_page(document_id, 1) is None
+    assert repo.get_chunk(document_id, "c1") is None
+    refreshed_project = repo.get_project(project_id)
+    assert refreshed_project is not None
+    assert refreshed_project.chunk_count == 0

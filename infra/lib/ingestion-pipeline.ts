@@ -1,0 +1,238 @@
+import * as path from "node:path";
+import { Duration, RemovalPolicy } from "aws-cdk-lib";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as ecrAssets from "aws-cdk-lib/aws-ecr-assets";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
+import type * as s3 from "aws-cdk-lib/aws-s3";
+import * as sfn from "aws-cdk-lib/aws-stepfunctions";
+import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
+import { Construct } from "constructs";
+import { DynamicKeyJsonItemReader } from "./dynamic-key-json-item-reader";
+import { ingestionStateMachineName } from "./naming";
+
+export interface IngestionPipelineProps {
+  readonly env2: string;
+  readonly table: dynamodb.ITableV2;
+  readonly documentsBucket: s3.IBucket;
+}
+
+// docs/03-ingestion.md#state-machine: "Every state has Retry on States.TaskFailed/
+// Lambda.ServiceException/Lambda.TooManyRequestsException with exponential backoff (2 s base,
+// 2x rate, 4 attempts)."
+const RETRYABLE_ERRORS = [
+  "States.TaskFailed",
+  "Lambda.ServiceException",
+  "Lambda.TooManyRequestsException",
+];
+const RETRY_PROPS: sfn.RetryProps = {
+  errors: RETRYABLE_ERRORS,
+  interval: Duration.seconds(2),
+  backoffRate: 2,
+  maxAttempts: 4,
+};
+
+// docs/03-ingestion.md#performance-targets and docs/07-security.md#abuse-and-cost-controls:
+// matches `Settings.ingestion_reserved_concurrency`/`distributed_map_max_concurrency` in
+// services/common/common/config.py — kept in sync by hand, since Python and CDK don't share a
+// config source.
+const INGESTION_RESERVED_CONCURRENCY = 25;
+const DISTRIBUTED_MAP_MAX_CONCURRENCY = 20;
+
+/**
+ * docs/03-ingestion.md's Step Functions Standard state machine: Probe -> ProcessPages
+ * (Distributed Map) -> Chunk -> Finalize, each with Catch -> MarkFailed. `EnsureIndex`/
+ * `EmbedAndIndex` are not built yet — Phase 4 inserts them between Chunk and Finalize once
+ * `services/common/common/vectors.py` is finalised; this phase reaches `READY` without vectors
+ * ("No embeddings yet" is this phase's explicit goal, per docs/10-roadmap.md's Phase 3 header).
+ */
+export class IngestionPipeline extends Construct {
+  public readonly stateMachine: sfn.StateMachine;
+  public readonly probeFunction: lambda.DockerImageFunction;
+  public readonly pageFunction: lambda.DockerImageFunction;
+  public readonly chunkFunction: lambda.DockerImageFunction;
+  public readonly finalizeFunction: lambda.DockerImageFunction;
+  public readonly markFailedFunction: lambda.DockerImageFunction;
+
+  constructor(scope: Construct, id: string, props: IngestionPipelineProps) {
+    super(scope, id);
+
+    const repoRoot = path.join(__dirname, "..", "..");
+    const sharedEnvironment = {
+      CWD_ENV: props.env2,
+      CWD_DOCUMENTS_BUCKET_NAME: props.documentsBucket.bucketName,
+    };
+
+    const makeFunction = (name: string, cmd: string, memoryMb: number): lambda.DockerImageFunction => {
+      const logGroup = new logs.LogGroup(this, `${name}LogGroup`, {
+        logGroupName: `/aws/lambda/cwd-${props.env2}-${name}`,
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      });
+      const fn = new lambda.DockerImageFunction(this, `${name}Function`, {
+        functionName: `cwd-${props.env2}-${name}`,
+        code: lambda.DockerImageCode.fromImageAsset(repoRoot, {
+          file: "services/Dockerfile",
+          buildArgs: { SERVICE: "ingestion" },
+          platform: ecrAssets.Platform.LINUX_AMD64,
+          cmd: [cmd],
+        }),
+        architecture: lambda.Architecture.X86_64,
+        memorySize: memoryMb,
+        timeout: Duration.minutes(5),
+        reservedConcurrentExecutions: INGESTION_RESERVED_CONCURRENCY,
+        logGroup,
+        environment: sharedEnvironment,
+      });
+      props.table.grantReadWriteData(fn);
+      props.table.grant(fn, "dynamodb:TransactWriteItems");
+      return fn;
+    };
+
+    // docs/03-ingestion.md#step-1--probe: downloads raw/, writes artifacts/probe.json, writes
+    // Page items.
+    this.probeFunction = makeFunction("ingest-probe", "ingestion.handlers.probe_handler", 1024);
+    props.documentsBucket.grantRead(this.probeFunction, "raw/*");
+    props.documentsBucket.grantWrite(this.probeFunction, "artifacts/*");
+
+    // docs/03-ingestion.md#step-2--processpages: downloads raw/, writes pages/ + artifacts/
+    // blocks/, calls Textract. 2048 MB: PyMuPDF rendering is the most memory-hungry step.
+    this.pageFunction = makeFunction("ingest-page", "ingestion.handlers.page_handler", 2048);
+    props.documentsBucket.grantRead(this.pageFunction, "raw/*");
+    props.documentsBucket.grantReadWrite(this.pageFunction, "pages/*");
+    props.documentsBucket.grantReadWrite(this.pageFunction, "artifacts/*");
+    this.pageFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["textract:DetectDocumentText"],
+        // Textract's DetectDocumentText has no resource-level permissions (AWS-enforced) —
+        // "*" here is not the kind of wildcard docs/07-security.md's IAM table warns against
+        // (that rule targets enumerable Bedrock model ARNs specifically).
+        resources: ["*"],
+      }),
+    );
+
+    // docs/03-ingestion.md#step-3--chunk: reads artifacts/blocks/*, writes Chunk items and
+    // artifacts/chunks.jsonl.
+    this.chunkFunction = makeFunction("ingest-chunk", "ingestion.handlers.chunk_handler", 1024);
+    props.documentsBucket.grantRead(this.chunkFunction, "artifacts/*");
+    props.documentsBucket.grantWrite(this.chunkFunction, "artifacts/*");
+
+    // docs/03-ingestion.md#step-6--finalize: Document/Project updates only, no S3 access.
+    this.finalizeFunction = makeFunction("ingest-finalize", "ingestion.handlers.finalize_handler", 512);
+
+    // docs/03-ingestion.md#failure-handling--markfailed: Document status update only.
+    this.markFailedFunction = makeFunction("mark-failed", "ingestion.handlers.mark_failed_handler", 512);
+
+    // -- state machine -------------------------------------------------------------------------
+
+    const markFailedTask = new tasks.LambdaInvoke(this, "MarkFailed", {
+      lambdaFunction: this.markFailedFunction,
+      payloadResponseOnly: true,
+      retryOnServiceExceptions: false,
+      payload: sfn.TaskInput.fromObject({
+        "projectId.$": "$.projectId",
+        "documentId.$": "$.documentId",
+        "error.$": "$.error",
+      }),
+    });
+    const failState = new sfn.Fail(this, "IngestionFailed", {
+      error: "IngestionFailed",
+      causePath: "$.statusDetail",
+    });
+    const errorBranch = markFailedTask.next(failState);
+
+    const probeTask = new tasks.LambdaInvoke(this, "Probe", {
+      lambdaFunction: this.probeFunction,
+      payloadResponseOnly: true,
+      retryOnServiceExceptions: false,
+      payload: sfn.TaskInput.fromObject({
+        "projectId.$": "$.projectId",
+        "documentId.$": "$.documentId",
+        "s3Key.$": "$.s3Key",
+        "contentType.$": "$.contentType",
+      }),
+    });
+    probeTask.addRetry(RETRY_PROPS);
+    probeTask.addCatch(errorBranch, { resultPath: "$.error" });
+
+    const pageTask = new tasks.LambdaInvoke(this, "IngestPage", {
+      lambdaFunction: this.pageFunction,
+      payloadResponseOnly: true,
+      retryOnServiceExceptions: false,
+    });
+    pageTask.addRetry(RETRY_PROPS);
+
+    // docs/03-ingestion.md#step-2--processpages-distributed-map--ingest-page: item list comes
+    // from `artifacts/{p}/{d}/probe.json`, not the state payload, so page count isn't bounded
+    // by the 256 KB state limit. See DynamicKeyJsonItemReader's docstring for why a plain
+    // `sfn.S3JsonItemReader` can't be used here (its `key` is a static string; ours is only
+    // known at execution time).
+    const processPages = new sfn.DistributedMap(this, "ProcessPages", {
+      itemReader: new DynamicKeyJsonItemReader({
+        bucket: props.documentsBucket,
+        keyJsonPath: "$.probeKey",
+        readablePrefix: "artifacts/*",
+      }),
+      maxConcurrency: DISTRIBUTED_MAP_MAX_CONCURRENCY,
+      itemSelector: {
+        "pageNumber.$": "$$.Map.Item.Value.pageNumber",
+        "width.$": "$$.Map.Item.Value.width",
+        "height.$": "$$.Map.Item.Value.height",
+        "rotation.$": "$$.Map.Item.Value.rotation",
+        "textSource.$": "$$.Map.Item.Value.textSource",
+        "textDensity.$": "$$.Map.Item.Value.textDensity",
+        "projectId.$": "$.projectId",
+        "documentId.$": "$.documentId",
+        "s3Key.$": "$.s3Key",
+        "kind.$": "$.kind",
+        "pageCount.$": "$.pageCount",
+      },
+      resultPath: "$.pageResults",
+    });
+    processPages.itemProcessor(pageTask);
+    processPages.addRetry(RETRY_PROPS);
+    processPages.addCatch(errorBranch, { resultPath: "$.error" });
+
+    const chunkTask = new tasks.LambdaInvoke(this, "Chunk", {
+      lambdaFunction: this.chunkFunction,
+      payloadResponseOnly: true,
+      retryOnServiceExceptions: false,
+      payload: sfn.TaskInput.fromObject({
+        "projectId.$": "$.projectId",
+        "documentId.$": "$.documentId",
+        "pageCount.$": "$.pageCount",
+      }),
+      resultPath: "$.chunkResult",
+    });
+    chunkTask.addRetry(RETRY_PROPS);
+    chunkTask.addCatch(errorBranch, { resultPath: "$.error" });
+
+    const finalizeTask = new tasks.LambdaInvoke(this, "Finalize", {
+      lambdaFunction: this.finalizeFunction,
+      payloadResponseOnly: true,
+      retryOnServiceExceptions: false,
+      payload: sfn.TaskInput.fromObject({
+        "projectId.$": "$.projectId",
+        "documentId.$": "$.documentId",
+        "pageCount.$": "$.pageCount",
+        "ocrPageCount.$": "$.ocrPageCount",
+        "chunkCount.$": "$.chunkResult.chunkCount",
+      }),
+    });
+    finalizeTask.addRetry(RETRY_PROPS);
+    finalizeTask.addCatch(errorBranch, { resultPath: "$.error" });
+
+    const definition = probeTask.next(processPages).next(chunkTask).next(finalizeTask);
+
+    // Standard, not Express (docs/03-ingestion.md#state-machine): a 500-page PDF can exceed
+    // five minutes, full execution history matters for debugging, and Distributed Map requires
+    // it.
+    this.stateMachine = new sfn.StateMachine(this, "StateMachine", {
+      stateMachineName: ingestionStateMachineName(props.env2),
+      stateMachineType: sfn.StateMachineType.STANDARD,
+      definitionBody: sfn.DefinitionBody.fromChainable(definition),
+      timeout: Duration.hours(2),
+    });
+  }
+}

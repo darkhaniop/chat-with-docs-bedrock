@@ -63,10 +63,19 @@ with exponential backoff (2 s base, 2× rate, 4 attempts) and a `Catch` to `Mark
 5. Reject documents over the configured limits (default: 1000 pages, 200 MB). Limits live in
    `services/common/config.py` and are surfaced to the client at upload time so rejection
    happens before the bytes move, not after.
-6. Write `artifacts/{p}/{d}/probe.json`, write Page items to DynamoDB, set document status
-   `PROCESSING`, publish an ingestion event.
+6. Write `artifacts/{p}/{d}/probe.json` — a **bare JSON array**, one object per page, because
+   the Distributed Map's `S3JsonItemReader` requires the object's top level to be an array (see
+   `infra/lib/compute-stack.ts`). Write Page items to DynamoDB. Publish an ingestion event.
 
-**Output:** `{pageCount, ocrPageCount, probeKey}`
+   > The document's `status` is flipped to `PROCESSING` earlier than this step, by the `api`
+   > Lambda's `:ingest` handler itself (synchronously, before `StartExecution` is even called) —
+   > not by Probe. Doing it in the API layer closes a race where a client double-clicking
+   > "ingest" could start two concurrent executions before Probe got a chance to run; Probe's
+   > own `update_document_ingestion` call only fills in `ingestion.startedAt`.
+
+**Output:** `{projectId, documentId, contentType, s3Key, kind, pageCount, ocrPageCount,
+probeKey}` — deliberately more than the immediate next step needs, since it also carries what
+`ProcessPages`'s `itemSelector` and later steps need without re-deriving it.
 
 ## Step 2 — `ProcessPages` (Distributed Map → `ingest-page`)
 

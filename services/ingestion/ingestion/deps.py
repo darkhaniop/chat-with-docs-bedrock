@@ -1,6 +1,5 @@
 """Boto3 clients constructed once per Lambda execution environment, never inside a handler.
-`CWD_DOCUMENTS_BUCKET_NAME` is set by `CwdComputeStack` from the data stack's real bucket
-resource.
+Mirrors `services/api/api/deps.py`'s pattern.
 """
 
 from __future__ import annotations
@@ -11,9 +10,10 @@ from functools import lru_cache
 import boto3
 
 from common.config import get_settings
+from common.events import AppSyncEventsPublisher, EventsPublisher
+from common.ocr import Textract
 from common.repo import Repo
 from common.storage import DocumentsStore
-from common.workflow import Workflow
 
 
 @lru_cache(maxsize=1)
@@ -32,8 +32,13 @@ def get_store() -> DocumentsStore:
 
 
 @lru_cache(maxsize=1)
-def get_workflow() -> Workflow:
+def get_textract() -> Textract:
     settings = get_settings()
-    client = boto3.client("stepfunctions", region_name=settings.aws_region)
-    state_machine_arn = os.environ["CWD_INGESTION_STATE_MACHINE_ARN"]
-    return Workflow(client, state_machine_arn=state_machine_arn)
+    client = boto3.client("textract", region_name=settings.aws_region)
+    return Textract(client)
+
+
+@lru_cache(maxsize=1)
+def get_events() -> EventsPublisher:
+    settings = get_settings()
+    return AppSyncEventsPublisher(domain=settings.events_http_domain, region=settings.aws_region)

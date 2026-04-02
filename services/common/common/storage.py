@@ -1,8 +1,9 @@
 """S3 adapter for the documents bucket (docs/02-data-model.md#s3-layout).
 
-Every key this module touches lives under `raw/` or `pages/` — the prefixes the `api` role is
-scoped to (docs/07-security.md#iam). `artifacts/` is never presigned; only ingestion writes and
-reads it.
+Shared by `api` (presigned `raw/`/`pages/` URLs, scoped by IAM to those prefixes per
+docs/07-security.md#iam) and `services/ingestion` (direct reads/writes across all four
+prefixes, including `artifacts/`, which is never presigned). The class itself doesn't enforce
+which prefixes a caller may touch — that boundary is IAM grants in CDK, not this adapter.
 """
 
 from __future__ import annotations
@@ -20,6 +21,25 @@ def source_key(project_id: str, document_id: str, extension: str) -> str:
 
 def render_key(project_id: str, document_id: str, page_number: int) -> str:
     return f"pages/{project_id}/{document_id}/{page_number:04d}.png"
+
+
+def embed_render_key(project_id: str, document_id: str, page_number: int) -> str:
+    return f"pages/{project_id}/{document_id}/{page_number:04d}.embed.jpg"
+
+
+def probe_key(project_id: str, document_id: str) -> str:
+    return f"artifacts/{project_id}/{document_id}/probe.json"
+
+
+def blocks_key(project_id: str, document_id: str, page_number: int) -> str:
+    """docs/03-ingestion.md#2c-persist: one object per page — Distributed Map iterations cannot
+    safely append to a shared object — concatenated into a mirror at `chunks_key` by
+    `ingest-chunk`."""
+    return f"artifacts/{project_id}/{document_id}/blocks/{page_number:04d}.json"
+
+
+def chunks_key(project_id: str, document_id: str) -> str:
+    return f"artifacts/{project_id}/{document_id}/chunks.jsonl"
 
 
 class DocumentsStore:
@@ -60,6 +80,14 @@ class DocumentsStore:
             if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
                 return False
             raise
+
+    def get_object(self, key: str) -> bytes:
+        response = self._client.get_object(Bucket=self._bucket, Key=key)
+        body: bytes = response["Body"].read()
+        return body
+
+    def put_object(self, key: str, data: bytes, *, content_type: str) -> None:
+        self._client.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
 
     def delete_prefix(self, prefix: str) -> None:
         paginator = self._client.get_paginator("list_objects_v2")

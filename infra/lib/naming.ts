@@ -50,3 +50,9 @@ export function cognitoDomainPrefix(env: string, account: string): string {
 export function dashboardName(env: string): string {
   return `cwd-${env}`;
 }
+
+/** `cwd-{env}-ingest` — the ingestion Step Functions state machine
+ * (docs/03-ingestion.md#state-machine). */
+export function ingestionStateMachineName(env: string): string {
+  return `cwd-${env}-ingest`;
+}

@@ -73,6 +73,7 @@ describe("CwdComputeStack", () => {
         "PATCH /projects/{projectId}",
         "POST /projects",
         "POST /projects/{projectId}/documents",
+        "POST /projects/{projectId}/documents/{documentId}:ingest",
       ].sort(),
     );
   });
@@ -87,9 +88,9 @@ describe("CwdComputeStack", () => {
     });
   });
 
-  it("gives the api function and the sweeper function their own distinct roles", () => {
+  it("gives every Lambda function (api, sweeper, and the five ingestion functions) its own distinct role", () => {
     const roles = template.findResources("AWS::IAM::Role");
-    expect(Object.keys(roles)).toHaveLength(2);
+    expect(Object.keys(roles)).toHaveLength(8);
   });
 
   it("no role has any Bedrock permission at all", () => {
@@ -100,32 +101,65 @@ describe("CwdComputeStack", () => {
     }
   });
 
-  it("has no wildcard-resource IAM statement anywhere in the stack", () => {
+  it("has no wildcard-resource IAM statement anywhere in the stack, except Textract's DetectDocumentText (which AWS gives no resource-level permissions for)", () => {
     const policies = template.findResources("AWS::IAM::Policy");
-    for (const policy of Object.values(policies)) {
+    for (const [name, policy] of Object.entries(policies)) {
       for (const statement of policy.Properties.PolicyDocument.Statement) {
         if (statement.Effect !== "Allow") continue;
         const resources = ([] as unknown[]).concat(statement.Resource ?? []);
-        expect(resources).not.toContain("*");
+        if (resources.includes("*")) {
+          const actions = ([] as unknown[]).concat(statement.Action ?? []);
+          expect(actions).toEqual(["textract:DetectDocumentText"]);
+          expect(name).toContain("ingestpage");
+        }
       }
     }
   });
 
-  it("scopes the api function's S3 access to raw/* and pages/* only", () => {
-    const policies = template.findResources("AWS::IAM::Policy");
-    const allStatements = Object.values(policies).flatMap(
+  it("scopes the api function's S3 access to raw/* and pages/* only, never artifacts/*", () => {
+    const apiPolicy = template.findResources("AWS::IAM::Policy", {
+      Properties: { PolicyName: Match.stringLikeRegexp("^ApiFunctionServiceRoleDefaultPolicy") },
+    });
+    const statements = Object.values(apiPolicy).flatMap(
       (p) => p.Properties.PolicyDocument.Statement as Array<Record<string, unknown>>,
     );
-    const s3Statements = allStatements.filter((s) =>
-      JSON.stringify(s.Action ?? "").includes("s3:"),
-    );
+    const s3Statements = statements.filter((s) => JSON.stringify(s.Action ?? "").includes("s3:"));
     expect(s3Statements.length).toBeGreaterThan(0);
     for (const statement of s3Statements) {
       const resources = JSON.stringify(statement.Resource);
-      if (resources.includes("DocumentsBucket") || resources.includes("documents")) {
-        expect(resources.includes("artifacts")).toBe(false);
-      }
+      expect(resources.includes("artifacts")).toBe(false);
     }
+  });
+
+  it("grants the ingest-page function read/write on artifacts/* (blocks) in addition to pages/*", () => {
+    const pagePolicy = template.findResources("AWS::IAM::Policy", {
+      Properties: {
+        PolicyName: Match.stringLikeRegexp("^IngestionPipelineingestpageFunctionServiceRoleDefaultPolicy"),
+      },
+    });
+    const statements = Object.values(pagePolicy).flatMap(
+      (p) => p.Properties.PolicyDocument.Statement as Array<Record<string, unknown>>,
+    );
+    const s3Statements = statements.filter((s) => JSON.stringify(s.Action ?? "").includes("s3:"));
+    const resources = JSON.stringify(s3Statements.map((s) => s.Resource));
+    expect(resources).toContain("artifacts");
+    expect(resources).toContain("pages");
+  });
+
+  it("grants the api function states:StartExecution scoped to the ingestion state machine only", () => {
+    const apiPolicy = template.findResources("AWS::IAM::Policy", {
+      Properties: { PolicyName: Match.stringLikeRegexp("^ApiFunctionServiceRoleDefaultPolicy") },
+    });
+    const statements = Object.values(apiPolicy).flatMap(
+      (p) => p.Properties.PolicyDocument.Statement as Array<Record<string, unknown>>,
+    );
+    const startExecutionStatements = statements.filter((s) =>
+      JSON.stringify(s.Action ?? "").includes("states:StartExecution"),
+    );
+    expect(startExecutionStatements).toHaveLength(1);
+    const resources = JSON.stringify(startExecutionStatements[0]?.Resource);
+    expect(resources).not.toBe('"*"');
+    expect(resources).toContain("StateMachine");
   });
 
   it("sets 30-day log retention on both function log groups", () => {
@@ -136,19 +170,42 @@ describe("CwdComputeStack", () => {
     }
   });
 
-  it("builds both functions from services/Dockerfile with SERVICE=api, x86_64 only", () => {
+  it("builds exactly two images from services/Dockerfile (SERVICE=api, SERVICE=ingestion), x86_64 only", () => {
     const assets = JSON.parse(
       fs.readFileSync(path.join(outdir, "TestComputeStack.assets.json"), "utf8"),
     ) as { dockerImages: Record<string, { source: Record<string, unknown> }> };
     const images = Object.values(assets.dockerImages);
-    expect(images.length).toBeGreaterThan(0);
+    expect(images.length).toBe(2);
+    const services = images
+      .map(
+        (image) =>
+          (image.source as { dockerBuildArgs: { SERVICE: string } }).dockerBuildArgs.SERVICE,
+      )
+      .sort();
+    expect(services).toEqual(["api", "ingestion"]);
     for (const image of images) {
       expect(image.source).toMatchObject({
         dockerFile: "services/Dockerfile",
-        dockerBuildArgs: { SERVICE: "api" },
         platform: "linux/amd64",
       });
     }
+  });
+
+  it("gives each of the five ingestion Lambdas its own distinct command over the shared image", () => {
+    const fns = template.findResources("AWS::Lambda::Function");
+    const ingestionCommands = Object.values(fns)
+      .map((fn) => fn.Properties.ImageConfig?.Command?.[0])
+      .filter((cmd): cmd is string => typeof cmd === "string" && cmd.startsWith("ingestion."));
+    expect(new Set(ingestionCommands).size).toBe(5);
+    expect(ingestionCommands.sort()).toEqual(
+      [
+        "ingestion.handlers.probe_handler",
+        "ingestion.handlers.page_handler",
+        "ingestion.handlers.chunk_handler",
+        "ingestion.handlers.finalize_handler",
+        "ingestion.handlers.mark_failed_handler",
+      ].sort(),
+    );
   });
 
   it("schedules the sweeper to run once a day", () => {

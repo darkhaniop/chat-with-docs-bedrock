@@ -29,3 +29,7 @@ def bad_request(code: str, message: str, **details: Any) -> ApiError:
 
 def too_large(code: str, message: str, **details: Any) -> ApiError:
     return ApiError(413, code, message, details)
+
+
+def conflict(code: str, message: str, **details: Any) -> ApiError:
+    return ApiError(409, code, message, details)

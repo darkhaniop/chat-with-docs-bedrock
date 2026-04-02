@@ -14,6 +14,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import type { Construct } from "constructs";
+import { IngestionPipeline } from "./ingestion-pipeline";
 import { dashboardName } from "./naming";
 
 export interface CwdComputeStackProps extends StackProps {
@@ -49,6 +50,7 @@ export class CwdComputeStack extends Stack {
   public readonly api: apigwv2.HttpApi;
   public readonly apiFunction: lambda.DockerImageFunction;
   public readonly sweeperFunction: lambda.DockerImageFunction;
+  public readonly ingestionPipeline: IngestionPipeline;
 
   constructor(scope: Construct, id: string, props: CwdComputeStackProps) {
     super(scope, id, props);
@@ -56,6 +58,12 @@ export class CwdComputeStack extends Stack {
     // Repository root — the Docker build context must be the root because
     // services/Dockerfile COPYs services/common alongside services/api.
     const repoRoot = path.join(__dirname, "..", "..");
+
+    this.ingestionPipeline = new IngestionPipeline(this, "IngestionPipeline", {
+      env2: props.env2,
+      table: props.table,
+      documentsBucket: props.documentsBucket,
+    });
 
     const apiImageCode = lambda.DockerImageCode.fromImageAsset(repoRoot, {
       file: "services/Dockerfile",
@@ -84,9 +92,13 @@ export class CwdComputeStack extends Stack {
       memorySize: 512,
       timeout: Duration.seconds(10),
       logGroup: apiLogGroup,
-      environment: sharedEnvironment,
+      environment: {
+        ...sharedEnvironment,
+        CWD_INGESTION_STATE_MACHINE_ARN: this.ingestionPipeline.stateMachine.stateMachineArn,
+      },
     });
     this._grantApiPermissions(this.apiFunction, props);
+    this.ingestionPipeline.stateMachine.grantStartExecution(this.apiFunction);
 
     // A `PENDING` document whose client never called `:ingest` is swept daily rather than by a
     // bucket lifecycle rule, because the rule can't see DynamoDB state. Shares the `api` image
@@ -153,6 +165,7 @@ export class CwdComputeStack extends Stack {
       ["/projects/{projectId}/documents", apigwv2.HttpMethod.GET],
       ["/projects/{projectId}/documents/{documentId}", apigwv2.HttpMethod.GET],
       ["/projects/{projectId}/documents/{documentId}", apigwv2.HttpMethod.DELETE],
+      ["/projects/{projectId}/documents/{documentId}:ingest", apigwv2.HttpMethod.POST],
       ["/projects/{projectId}/documents/{documentId}/source-url", apigwv2.HttpMethod.GET],
       [
         "/projects/{projectId}/documents/{documentId}/pages/{page}/render-url",

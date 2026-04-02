@@ -1,7 +1,5 @@
-"""moto-backed AWS for handler-level routing tests. Uses the same table/bucket-naming
-convention `common.config.get_settings()` already resolves to by default (env `dev`), so the
-Lambda's own dependency wiring (`api.deps`) needs no test-only env override beyond the bucket
-name, which is genuinely deploy-time-injected (see `api/deps.py`)."""
+"""moto-backed AWS for ingestion handler tests — mirrors services/api/tests/conftest.py's
+pattern (docs/08-testing.md#strategy: unit tests never touch the network)."""
 
 from __future__ import annotations
 
@@ -11,13 +9,20 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from api import deps
 from common.config import get_settings
+from ingestion import deps
 
 _BUCKET_NAME = "cwd-documents-test-111122223333"
-_STATE_MACHINE_DEFINITION = (
-    '{"StartAt": "Probe", "States": {"Probe": {"Type": "Pass", "End": true}}}'
-)
+
+
+def _clear_caches() -> None:
+    # Tests that monkeypatch e.g. `deps.get_events` replace the lru_cache-wrapped function with
+    # a plain lambda for the test's duration; by teardown time it may no longer have
+    # `cache_clear` (monkeypatch's own undo runs after this fixture's), so clear defensively.
+    for getter in (deps.get_repo, deps.get_store, deps.get_textract, deps.get_events):
+        clear = getattr(getter, "cache_clear", None)
+        if clear is not None:
+            clear()
 
 
 @pytest.fixture(autouse=True)
@@ -41,18 +46,6 @@ def aws_stack(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         s3 = boto3.client("s3", region_name=settings.aws_region)
         s3.create_bucket(Bucket=_BUCKET_NAME)
 
-        sfn = boto3.client("stepfunctions", region_name=settings.aws_region)
-        state_machine = sfn.create_state_machine(
-            name="cwd-test-ingest",
-            definition=_STATE_MACHINE_DEFINITION,
-            roleArn="arn:aws:iam::111122223333:role/fake-sfn-role",
-        )
-        monkeypatch.setenv("CWD_INGESTION_STATE_MACHINE_ARN", state_machine["stateMachineArn"])
-
-        deps.get_repo.cache_clear()
-        deps.get_store.cache_clear()
-        deps.get_workflow.cache_clear()
+        _clear_caches()
         yield
-        deps.get_repo.cache_clear()
-        deps.get_store.cache_clear()
-        deps.get_workflow.cache_clear()
+        _clear_caches()

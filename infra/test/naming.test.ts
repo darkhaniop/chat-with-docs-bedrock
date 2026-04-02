@@ -1,6 +1,7 @@
 import {
   cognitoDomainPrefix,
   documentsBucketName,
+  ingestionStateMachineName,
   siteBucketName,
   stackName,
   tableName,
@@ -20,6 +21,7 @@ describe("naming", () => {
     expect(vectorBucketName("dev", "123456789012")).toBe("cwd-vectors-dev-123456789012");
     expect(vectorIndexName("01JQABC")).toBe("proj-01JQABC");
     expect(siteBucketName("dev", "123456789012")).toBe("cwd-site-dev-123456789012");
+    expect(ingestionStateMachineName("dev")).toBe("cwd-dev-ingest");
   });
 
   it("produces a lowercase, hyphenated Cognito domain prefix", () => {

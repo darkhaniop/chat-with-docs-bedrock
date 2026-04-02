@@ -31,7 +31,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:e5a6beea3dc074c0da08f8da15ff42199788cb950e7928885803f939b6eba485",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:b7b87146150fdf1c3f84b159ee25fdaa65312fa673e6b19620f936a024507f9d",
           },
         },
         "Environment": {
@@ -41,6 +41,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_INGESTION_STATE_MACHINE_ARN": {
+              "Ref": "IngestionPipelineStateMachineAA924511",
+            },
             "CWD_VERSION": "0.1.0",
           },
         },
@@ -227,6 +230,13 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
                     "/pages/*",
                   ],
                 ],
+              },
+            },
+            {
+              "Action": "states:StartExecution",
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "IngestionPipelineStateMachineAA924511",
               },
             },
           ],
@@ -985,6 +995,1269 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
       },
       "Type": "AWS::Lambda::Permission",
     },
+    "HttpApiPOSTprojectsprojectIddocumentsdocumentIdingest00B26E92": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "POST /projects/{projectId}/documents/{documentId}:ingest",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
+    "HttpApiPOSTprojectsprojectIddocumentsdocumentIdingestApiIntegrationPermissionFA9AF35F": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/projects/{projectId}/documents/{documentId}:ingest",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "IngestionPipelineStateMachineAA924511": {
+      "DeletionPolicy": "Delete",
+      "DependsOn": [
+        "IngestionPipelineStateMachineRoleDefaultPolicy18262E00",
+        "IngestionPipelineStateMachineRole6B0FB3B6",
+      ],
+      "Properties": {
+        "DefinitionString": {
+          "Fn::Join": [
+            "",
+            [
+              "{"StartAt":"Probe","States":{"Probe":{"Next":"ProcessPages","Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Type":"Task","Resource":"",
+              {
+                "Fn::GetAtt": [
+                  "IngestionPipelineingestprobeFunction7FDA0A30",
+                  "Arn",
+                ],
+              },
+              "","Parameters":{"projectId.$":"$.projectId","documentId.$":"$.documentId","s3Key.$":"$.s3Key","contentType.$":"$.contentType"}},"ProcessPages":{"Type":"Map","ResultPath":"$.pageResults","Next":"Chunk","Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"ItemSelector":{"pageNumber.$":"$$.Map.Item.Value.pageNumber","width.$":"$$.Map.Item.Value.width","height.$":"$$.Map.Item.Value.height","rotation.$":"$$.Map.Item.Value.rotation","textSource.$":"$$.Map.Item.Value.textSource","textDensity.$":"$$.Map.Item.Value.textDensity","projectId.$":"$.projectId","documentId.$":"$.documentId","s3Key.$":"$.s3Key","kind.$":"$.kind","pageCount.$":"$.pageCount"},"ItemProcessor":{"ProcessorConfig":{"Mode":"DISTRIBUTED","ExecutionType":"STANDARD"},"StartAt":"IngestPage","States":{"IngestPage":{"End":true,"Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Type":"Task","Resource":"",
+              {
+                "Fn::GetAtt": [
+                  "IngestionPipelineingestpageFunctionE90D789B",
+                  "Arn",
+                ],
+              },
+              ""}}},"MaxConcurrency":20,"ItemReader":{"Resource":"arn:aws:states:::s3:getObject","ReaderConfig":{"InputType":"JSON"},"Parameters":{"Bucket":"",
+              {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+              },
+              "","Key.$":"$.probeKey"}}},"Chunk":{"Next":"Finalize","Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Type":"Task","ResultPath":"$.chunkResult","Resource":"",
+              {
+                "Fn::GetAtt": [
+                  "IngestionPipelineingestchunkFunctionDED593A4",
+                  "Arn",
+                ],
+              },
+              "","Parameters":{"projectId.$":"$.projectId","documentId.$":"$.documentId","pageCount.$":"$.pageCount"}},"Finalize":{"End":true,"Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Type":"Task","Resource":"",
+              {
+                "Fn::GetAtt": [
+                  "IngestionPipelineingestfinalizeFunctionD56A8FCC",
+                  "Arn",
+                ],
+              },
+              "","Parameters":{"projectId.$":"$.projectId","documentId.$":"$.documentId","pageCount.$":"$.pageCount","ocrPageCount.$":"$.ocrPageCount","chunkCount.$":"$.chunkResult.chunkCount"}},"MarkFailed":{"Next":"IngestionFailed","Type":"Task","Resource":"",
+              {
+                "Fn::GetAtt": [
+                  "IngestionPipelinemarkfailedFunction889D41BE",
+                  "Arn",
+                ],
+              },
+              "","Parameters":{"projectId.$":"$.projectId","documentId.$":"$.documentId","error.$":"$.error"}},"IngestionFailed":{"Type":"Fail","Error":"IngestionFailed","CausePath":"$.statusDetail"}},"TimeoutSeconds":7200}",
+            ],
+          ],
+        },
+        "RoleArn": {
+          "Fn::GetAtt": [
+            "IngestionPipelineStateMachineRole6B0FB3B6",
+            "Arn",
+          ],
+        },
+        "StateMachineName": "cwd-dev-ingest",
+        "StateMachineType": "STANDARD",
+      },
+      "Type": "AWS::StepFunctions::StateMachine",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "IngestionPipelineStateMachineDistributedMapPolicy1151EC6F": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "states:StartExecution",
+              "Effect": "Allow",
+              "Resource": {
+                "Ref": "IngestionPipelineStateMachineAA924511",
+              },
+            },
+            {
+              "Action": [
+                "states:DescribeExecution",
+                "states:StopExecution",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":states:us-east-1:123456789012:execution:",
+                    {
+                      "Fn::Select": [
+                        6,
+                        {
+                          "Fn::Split": [
+                            ":",
+                            {
+                              "Ref": "IngestionPipelineStateMachineAA924511",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    ":*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "states:RedriveExecution",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":states:us-east-1:123456789012:execution:",
+                    {
+                      "Fn::Select": [
+                        6,
+                        {
+                          "Fn::Split": [
+                            ":",
+                            {
+                              "Ref": "IngestionPipelineStateMachineAA924511",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    "/*:*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelineStateMachineDistributedMapPolicy1151EC6F",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelineStateMachineRole6B0FB3B6",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelineStateMachineRole6B0FB3B6": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "states.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "IngestionPipelineStateMachineRoleDefaultPolicy18262E00": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "IngestionPipelineingestprobeFunction7FDA0A30",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "IngestionPipelineingestprobeFunction7FDA0A30",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3:GetObject",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    {
+                      "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                    },
+                    "/artifacts/*",
+                  ],
+                ],
+              },
+            },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "IngestionPipelineingestchunkFunctionDED593A4",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "IngestionPipelineingestchunkFunctionDED593A4",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "IngestionPipelineingestfinalizeFunctionD56A8FCC",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "IngestionPipelineingestfinalizeFunctionD56A8FCC",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "IngestionPipelinemarkfailedFunction889D41BE",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "IngestionPipelinemarkfailedFunction889D41BE",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "IngestionPipelineingestpageFunctionE90D789B",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "IngestionPipelineingestpageFunctionE90D789B",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelineStateMachineRoleDefaultPolicy18262E00",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelineStateMachineRole6B0FB3B6",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelineingestchunkFunctionDED593A4": {
+      "DependsOn": [
+        "IngestionPipelineingestchunkFunctionServiceRoleDefaultPolicy6765EB32",
+        "IngestionPipelineingestchunkFunctionServiceRole42E23CE9",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+          },
+        },
+        "FunctionName": "cwd-dev-ingest-chunk",
+        "ImageConfig": {
+          "Command": [
+            "ingestion.handlers.chunk_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "IngestionPipelineingestchunkLogGroup491B19C3",
+          },
+        },
+        "MemorySize": 1024,
+        "PackageType": "Image",
+        "ReservedConcurrentExecutions": 25,
+        "Role": {
+          "Fn::GetAtt": [
+            "IngestionPipelineingestchunkFunctionServiceRole42E23CE9",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "IngestionPipelineingestchunkFunctionServiceRole42E23CE9": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "IngestionPipelineingestchunkFunctionServiceRoleDefaultPolicy6765EB32": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/artifacts/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/artifacts/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelineingestchunkFunctionServiceRoleDefaultPolicy6765EB32",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelineingestchunkFunctionServiceRole42E23CE9",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelineingestchunkLogGroup491B19C3": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-ingest-chunk",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "IngestionPipelineingestfinalizeFunctionD56A8FCC": {
+      "DependsOn": [
+        "IngestionPipelineingestfinalizeFunctionServiceRoleDefaultPolicy8EAD87B2",
+        "IngestionPipelineingestfinalizeFunctionServiceRoleEED342BB",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+          },
+        },
+        "FunctionName": "cwd-dev-ingest-finalize",
+        "ImageConfig": {
+          "Command": [
+            "ingestion.handlers.finalize_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "IngestionPipelineingestfinalizeLogGroupC5B30FCF",
+          },
+        },
+        "MemorySize": 512,
+        "PackageType": "Image",
+        "ReservedConcurrentExecutions": 25,
+        "Role": {
+          "Fn::GetAtt": [
+            "IngestionPipelineingestfinalizeFunctionServiceRoleEED342BB",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "IngestionPipelineingestfinalizeFunctionServiceRoleDefaultPolicy8EAD87B2": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelineingestfinalizeFunctionServiceRoleDefaultPolicy8EAD87B2",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelineingestfinalizeFunctionServiceRoleEED342BB",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelineingestfinalizeFunctionServiceRoleEED342BB": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "IngestionPipelineingestfinalizeLogGroupC5B30FCF": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-ingest-finalize",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "IngestionPipelineingestpageFunctionE90D789B": {
+      "DependsOn": [
+        "IngestionPipelineingestpageFunctionServiceRoleDefaultPolicy7316E764",
+        "IngestionPipelineingestpageFunctionServiceRole60ABA404",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+          },
+        },
+        "FunctionName": "cwd-dev-ingest-page",
+        "ImageConfig": {
+          "Command": [
+            "ingestion.handlers.page_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "IngestionPipelineingestpageLogGroupDE9D900B",
+          },
+        },
+        "MemorySize": 2048,
+        "PackageType": "Image",
+        "ReservedConcurrentExecutions": 25,
+        "Role": {
+          "Fn::GetAtt": [
+            "IngestionPipelineingestpageFunctionServiceRole60ABA404",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "IngestionPipelineingestpageFunctionServiceRole60ABA404": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "IngestionPipelineingestpageFunctionServiceRoleDefaultPolicy7316E764": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/raw/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/pages/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/artifacts/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "textract:DetectDocumentText",
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelineingestpageFunctionServiceRoleDefaultPolicy7316E764",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelineingestpageFunctionServiceRole60ABA404",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelineingestpageLogGroupDE9D900B": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-ingest-page",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "IngestionPipelineingestprobeFunction7FDA0A30": {
+      "DependsOn": [
+        "IngestionPipelineingestprobeFunctionServiceRoleDefaultPolicy11DBC230",
+        "IngestionPipelineingestprobeFunctionServiceRoleFCDAC513",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+          },
+        },
+        "FunctionName": "cwd-dev-ingest-probe",
+        "ImageConfig": {
+          "Command": [
+            "ingestion.handlers.probe_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "IngestionPipelineingestprobeLogGroup0DBC3D01",
+          },
+        },
+        "MemorySize": 1024,
+        "PackageType": "Image",
+        "ReservedConcurrentExecutions": 25,
+        "Role": {
+          "Fn::GetAtt": [
+            "IngestionPipelineingestprobeFunctionServiceRoleFCDAC513",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "IngestionPipelineingestprobeFunctionServiceRoleDefaultPolicy11DBC230": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/raw/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/artifacts/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelineingestprobeFunctionServiceRoleDefaultPolicy11DBC230",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelineingestprobeFunctionServiceRoleFCDAC513",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelineingestprobeFunctionServiceRoleFCDAC513": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "IngestionPipelineingestprobeLogGroup0DBC3D01": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-ingest-probe",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "IngestionPipelinemarkfailedFunction889D41BE": {
+      "DependsOn": [
+        "IngestionPipelinemarkfailedFunctionServiceRoleDefaultPolicy10CFEF82",
+        "IngestionPipelinemarkfailedFunctionServiceRoleA0F44FF0",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+          },
+        },
+        "FunctionName": "cwd-dev-mark-failed",
+        "ImageConfig": {
+          "Command": [
+            "ingestion.handlers.mark_failed_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "IngestionPipelinemarkfailedLogGroupA82E76F4",
+          },
+        },
+        "MemorySize": 512,
+        "PackageType": "Image",
+        "ReservedConcurrentExecutions": 25,
+        "Role": {
+          "Fn::GetAtt": [
+            "IngestionPipelinemarkfailedFunctionServiceRoleA0F44FF0",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "IngestionPipelinemarkfailedFunctionServiceRoleA0F44FF0": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "IngestionPipelinemarkfailedFunctionServiceRoleDefaultPolicy10CFEF82": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelinemarkfailedFunctionServiceRoleDefaultPolicy10CFEF82",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelinemarkfailedFunctionServiceRoleA0F44FF0",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelinemarkfailedLogGroupA82E76F4": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-mark-failed",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
     "SweeperFunctionB5F2624B": {
       "DependsOn": [
         "SweeperFunctionServiceRoleDefaultPolicyD5F37340",
@@ -996,7 +2269,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:e5a6beea3dc074c0da08f8da15ff42199788cb950e7928885803f939b6eba485",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:b7b87146150fdf1c3f84b159ee25fdaa65312fa673e6b19620f936a024507f9d",
           },
         },
         "Environment": {

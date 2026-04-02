@@ -5,12 +5,32 @@ URL, which moto would not intercept."""
 
 from __future__ import annotations
 
-from common.storage import DocumentsStore, render_key, source_key
+from common.storage import (
+    DocumentsStore,
+    blocks_key,
+    chunks_key,
+    embed_render_key,
+    probe_key,
+    render_key,
+    source_key,
+)
 
 
 def test_source_key_and_render_key_match_the_documented_layout() -> None:
     assert source_key("proj1", "doc1", "pdf") == "raw/proj1/doc1/source.pdf"
     assert render_key("proj1", "doc1", 7) == "pages/proj1/doc1/0007.png"
+
+
+def test_artifact_keys_match_the_documented_layout() -> None:
+    assert embed_render_key("proj1", "doc1", 7) == "pages/proj1/doc1/0007.embed.jpg"
+    assert probe_key("proj1", "doc1") == "artifacts/proj1/doc1/probe.json"
+    assert blocks_key("proj1", "doc1", 7) == "artifacts/proj1/doc1/blocks/0007.json"
+    assert chunks_key("proj1", "doc1") == "artifacts/proj1/doc1/chunks.jsonl"
+
+
+def test_put_object_then_get_object_round_trips(store: DocumentsStore) -> None:
+    store.put_object("artifacts/p/d/probe.json", b'{"a": 1}', content_type="application/json")
+    assert store.get_object("artifacts/p/d/probe.json") == b'{"a": 1}'
 
 
 def test_presign_put_produces_a_url_scoped_to_the_declared_key(store: DocumentsStore) -> None:

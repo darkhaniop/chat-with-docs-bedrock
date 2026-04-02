@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     guardrail_id: str | None = None
     guardrail_version: str = "DRAFT"
 
+    # AppSync Events (docs/05-api-contracts.md#appsync-events). `CwdDevRealtimeStack` — the API
+    # this domain points at — is built in Phase 6; `common.events.AppSyncEventsPublisher`
+    # no-ops until then. The bare domain (`{api-id}.appsync-api.{region}.amazonaws.com`), not a
+    # full URL — `publish` builds the `/event` path itself.
+    events_http_domain: str | None = None
+
     # Observability (docs/09-operations.md#observability)
     log_retention_days: int = 30
 

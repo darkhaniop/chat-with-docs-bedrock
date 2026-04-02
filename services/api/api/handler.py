@@ -111,6 +111,22 @@ def _dispatch(route_key: str, event: dict[str, Any]) -> dict[str, Any]:
             ),
         )
 
+    if route_key == "POST /projects/{projectId}/documents/{documentId}:ingest":
+        owner_sub = _owner_sub(event)
+        project_id = _path(event, "projectId")
+        document_id = _path(event, "documentId")
+        return _response(
+            202,
+            documents.ingest(
+                deps.get_repo(),
+                deps.get_store(),
+                deps.get_workflow(),
+                owner_sub,
+                project_id,
+                document_id,
+            ),
+        )
+
     if route_key == "GET /projects/{projectId}/documents/{documentId}/pages/{page}/render-url":
         owner_sub = _owner_sub(event)
         project_id = _path(event, "projectId")

@@ -10,26 +10,23 @@ from typing import Any
 
 from api.errors import bad_request, too_large
 from common.config import Settings
+from common.content_types import ACCEPTED_CONTENT_TYPES, extension_for_content_type
 from common.models import DocumentKind
 
-# docs/05-api-contracts.md#documents: accepted content types and the file extension each source
-# object is stored under (docs/02-data-model.md#s3-layout).
-_ACCEPTED_CONTENT_TYPES: dict[str, tuple[DocumentKind, str]] = {
-    "application/pdf": ("pdf", "pdf"),
-    "image/png": ("image", "png"),
-    "image/jpeg": ("image", "jpg"),
-    "image/webp": ("image", "webp"),
-}
+__all__ = [
+    "extension_for_content_type",
+    "validate_create_document",
+    "validate_create_project",
+    "validate_page_number",
+    "validate_pagination",
+    "validate_patch_project",
+]
 
 _MAX_NAME_LENGTH = 200
 _MAX_DESCRIPTION_LENGTH = 2000
 _MAX_FILENAME_LENGTH = 255
 _DEFAULT_PAGE_LIMIT = 20
 _MAX_PAGE_LIMIT = 100
-
-
-def extension_for_content_type(content_type: str) -> str:
-    return _ACCEPTED_CONTENT_TYPES[content_type][1]
 
 
 def parse_body(raw: str | None) -> dict[str, Any]:
@@ -85,12 +82,12 @@ def validate_create_document(
 ) -> tuple[str, str, int, DocumentKind]:
     filename = _require_str(body, "filename", max_length=_MAX_FILENAME_LENGTH)
     content_type = _require_str(body, "contentType", max_length=100)
-    if content_type not in _ACCEPTED_CONTENT_TYPES:
+    if content_type not in ACCEPTED_CONTENT_TYPES:
         raise bad_request(
             "UNSUPPORTED_CONTENT_TYPE",
             f"`{content_type}` is not a supported document type.",
             contentType=content_type,
-            accepted=sorted(_ACCEPTED_CONTENT_TYPES),
+            accepted=sorted(ACCEPTED_CONTENT_TYPES),
         )
     byte_size = body.get("byteSize")
     if not isinstance(byte_size, int) or isinstance(byte_size, bool) or byte_size <= 0:
@@ -102,7 +99,7 @@ def validate_create_document(
             byteSize=byte_size,
             limit=settings.max_document_bytes,
         )
-    kind = _ACCEPTED_CONTENT_TYPES[content_type][0]
+    kind = ACCEPTED_CONTENT_TYPES[content_type][0]
     return filename, content_type, byte_size, kind
 
 

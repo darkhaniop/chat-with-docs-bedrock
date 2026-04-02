@@ -6,12 +6,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from api import validation
-from api.errors import bad_request
+from api.errors import bad_request, conflict
 from common import authz
 from common.config import Settings, get_settings
-from common.models import Document
-from common.repo import Repo
+from common.models import Document, DocumentIngestion
+from common.repo import Repo, new_id
 from common.storage import DocumentsStore, render_key, source_key
+from common.workflow import Workflow
 
 
 def _expiry(settings: Settings) -> str:
@@ -22,6 +23,7 @@ def _expiry(settings: Settings) -> str:
 def delete_storage(store: DocumentsStore, document: Document) -> None:
     store.delete_prefix(f"raw/{document.project_id}/{document.document_id}/")
     store.delete_prefix(f"pages/{document.project_id}/{document.document_id}/")
+    store.delete_prefix(f"artifacts/{document.project_id}/{document.document_id}/")
 
 
 def create(
@@ -71,8 +73,58 @@ def delete(
 ) -> dict[str, Any]:
     document = authz.require_document(repo, owner_sub, project_id, document_id)
     delete_storage(store, document)
+    repo.delete_pages_and_chunks(document_id)
+    if document.ingestion.chunk_count:
+        repo.increment_chunk_count(project_id, by=-document.ingestion.chunk_count)
     repo.delete_document(document)
     return {"status": "DELETING"}
+
+
+def ingest(
+    repo: Repo,
+    store: DocumentsStore,
+    workflow: Workflow,
+    owner_sub: str,
+    project_id: str,
+    document_id: str,
+) -> dict[str, Any]:
+    """docs/05-api-contracts.md#documents: "Ingest is idempotent and also serves as
+    retry/re-index. It returns 409 if an execution is already running for that document." A
+    re-ingest (status already `READY` or `FAILED`) deletes prior derived artifacts first —
+    docs/03-ingestion.md's `MarkFailed` section: "the retry path is a full re-ingest, which
+    deletes them first" — including reversing this document's earlier contribution to the
+    project's `chunkCount`, since `ingest-finalize` will add the new count back once the fresh
+    run completes.
+    """
+    document = authz.require_document(repo, owner_sub, project_id, document_id)
+    if document.status in ("PROCESSING", "DELETING"):
+        raise conflict("INGEST_IN_PROGRESS", "An ingestion is already running for this document.")
+
+    if document.status in ("READY", "FAILED"):
+        store.delete_prefix(f"pages/{project_id}/{document_id}/")
+        store.delete_prefix(f"artifacts/{project_id}/{document_id}/")
+        repo.delete_pages_and_chunks(document_id)
+        if document.ingestion.chunk_count:
+            repo.increment_chunk_count(project_id, by=-document.ingestion.chunk_count)
+
+    extension = validation.extension_for_content_type(document.content_type)
+    key = source_key(project_id, document_id, extension)
+    execution = workflow.start_execution(
+        name=f"{document_id}-{new_id()}",
+        input_payload={
+            "projectId": project_id,
+            "documentId": document_id,
+            "s3Key": key,
+            "contentType": document.content_type,
+        },
+    )
+    repo.update_document(
+        document_id,
+        status="PROCESSING",
+        status_detail=None,
+        ingestion=DocumentIngestion(execution_arn=execution.execution_arn),
+    )
+    return {"executionArn": execution.execution_arn}
 
 
 def source_url(
