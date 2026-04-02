@@ -1413,7 +1413,6 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         },
         "MemorySize": 1024,
         "PackageType": "Image",
-        "ReservedConcurrentExecutions": 25,
         "Role": {
           "Fn::GetAtt": [
             "IngestionPipelineingestchunkFunctionServiceRole42E23CE9",
@@ -1602,7 +1601,6 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         },
         "MemorySize": 512,
         "PackageType": "Image",
-        "ReservedConcurrentExecutions": 25,
         "Role": {
           "Fn::GetAtt": [
             "IngestionPipelineingestfinalizeFunctionServiceRoleEED342BB",
@@ -1739,7 +1737,6 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         },
         "MemorySize": 2048,
         "PackageType": "Image",
-        "ReservedConcurrentExecutions": 25,
         "Role": {
           "Fn::GetAtt": [
             "IngestionPipelineingestpageFunctionServiceRole60ABA404",
@@ -1967,7 +1964,6 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         },
         "MemorySize": 1024,
         "PackageType": "Image",
-        "ReservedConcurrentExecutions": 25,
         "Role": {
           "Fn::GetAtt": [
             "IngestionPipelineingestprobeFunctionServiceRoleFCDAC513",
@@ -2156,7 +2152,6 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         },
         "MemorySize": 512,
         "PackageType": "Image",
-        "ReservedConcurrentExecutions": 25,
         "Role": {
           "Fn::GetAtt": [
             "IngestionPipelinemarkfailedFunctionServiceRoleA0F44FF0",

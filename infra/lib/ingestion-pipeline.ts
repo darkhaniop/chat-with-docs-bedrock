@@ -34,10 +34,21 @@ const RETRY_PROPS: sfn.RetryProps = {
 };
 
 // docs/03-ingestion.md#performance-targets and docs/07-security.md#abuse-and-cost-controls:
-// matches `Settings.ingestion_reserved_concurrency`/`distributed_map_max_concurrency` in
-// services/common/common/config.py — kept in sync by hand, since Python and CDK don't share a
-// config source.
-const INGESTION_RESERVED_CONCURRENCY = 25;
+// matches `Settings.distributed_map_max_concurrency` in services/common/common/config.py —
+// kept in sync by hand, since Python and CDK don't share a config source.
+//
+// `Settings.ingestion_reserved_concurrency` (25) is **not** applied here — found live on first
+// deploy: this sandbox account's entire Lambda concurrency ceiling is 10
+// (`aws lambda get-account-settings` -> `AccountLimit.ConcurrentExecutions: 10`), and AWS
+// hard-rejects any `ReservedConcurrentExecutions` that would leave fewer than 10 unreserved.
+// With a 10-execution total budget, reserving *any* amount for *any* function is already
+// impossible without violating that floor, let alone 25 x 5 functions. Left unreserved, every
+// ingestion Lambda draws from the shared unreserved pool like `api`/`document-sweeper` already
+// do; `maxConcurrency` on the Distributed Map below is still a real, working throttle (Step
+// Functions' own retry-with-backoff on `Lambda.TooManyRequestsException` absorbs the
+// throttling this account's tiny ceiling will cause under real fan-out). Revisit
+// `reservedConcurrentExecutions` if this ever runs in an account with a normal (1000+) default
+// concurrency limit — do not reintroduce it against this sandbox account.
 const DISTRIBUTED_MAP_MAX_CONCURRENCY = 20;
 
 /**
@@ -81,7 +92,6 @@ export class IngestionPipeline extends Construct {
         architecture: lambda.Architecture.X86_64,
         memorySize: memoryMb,
         timeout: Duration.minutes(5),
-        reservedConcurrentExecutions: INGESTION_RESERVED_CONCURRENCY,
         logGroup,
         environment: sharedEnvironment,
       });
