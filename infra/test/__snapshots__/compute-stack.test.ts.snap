@@ -31,7 +31,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bb008797213843fc2c06ea4d000b6e3b27b9a0e4f0b1951f0bd1476d9344aa78",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:9f8267a0e70f0278c8f926d7440a5b19128208e138669d7de5509eb76b8824c4",
           },
         },
         "Environment": {
@@ -1389,7 +1389,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
           },
         },
         "Environment": {
@@ -1577,7 +1577,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
           },
         },
         "Environment": {
@@ -1713,7 +1713,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
           },
         },
         "Environment": {
@@ -1940,7 +1940,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
           },
         },
         "Environment": {
@@ -2128,7 +2128,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
           },
         },
         "Environment": {
@@ -2264,7 +2264,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bb008797213843fc2c06ea4d000b6e3b27b9a0e4f0b1951f0bd1476d9344aa78",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:9f8267a0e70f0278c8f926d7440a5b19128208e138669d7de5509eb76b8824c4",
           },
         },
         "Environment": {

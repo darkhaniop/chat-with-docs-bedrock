@@ -7,10 +7,15 @@ need — no HTTP route exposes Page/Chunk items yet (that's Phase 5's job).
 
 from __future__ import annotations
 
+import json
 import os
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import boto3
 import pytest
@@ -19,6 +24,7 @@ from common.config import get_settings
 from common.repo import Repo
 
 _E2E_ENV_FILE = Path(__file__).resolve().parents[4] / "e2e" / "fixtures" / ".env"
+FIXTURES_DIR = Path(__file__).resolve().parents[4] / "e2e" / "fixtures"
 
 
 @pytest.fixture(autouse=True)
@@ -93,3 +99,91 @@ def repo() -> Repo:
     settings = get_settings()
     client = boto3.client("dynamodb", region_name=settings.aws_region)
     return Repo(client, table_name=settings.table_name)
+
+
+# -- shared HTTP helpers (bundled behind a fixture, not a plain sibling import — pytest's
+# --import-mode=importlib does not add a test file's own directory to sys.path, so
+# `from _helpers import ...` in a sibling test module doesn't resolve; conftest.py fixtures are
+# the one thing pytest resolves specially regardless of import mode) -----------------------------
+
+
+def _request(
+    method: str, url: str, *, token: str, body: dict[str, Any] | None = None
+) -> tuple[int, dict[str, Any]]:
+    data = json.dumps(body).encode() if body is not None else None
+    http_request = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(http_request) as response:  # noqa: S310
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as error:
+        return error.code, json.loads(error.read())
+
+
+def _upload_fixture(
+    cognito_config: CognitoConfig, token: str, filename: str, content_type: str, *, name_suffix: str
+) -> tuple[str, str]:
+    data = (FIXTURES_DIR / filename).read_bytes()
+    status, body = _request(
+        "POST",
+        f"{cognito_config.api_base_url}/projects",
+        token=token,
+        body={"name": f"cwd-integration-{name_suffix}-{filename}"},
+    )
+    assert status == 201, body
+    project_id: str = body["projectId"]
+
+    status, body = _request(
+        "POST",
+        f"{cognito_config.api_base_url}/projects/{project_id}/documents",
+        token=token,
+        body={"filename": filename, "contentType": content_type, "byteSize": len(data)},
+    )
+    assert status == 201, body
+    document_id: str = body["document"]["documentId"]
+
+    upload = body["upload"]
+    put_request = urllib.request.Request(
+        upload["url"], data=data, method="PUT", headers=upload["headers"]
+    )
+    with urllib.request.urlopen(put_request) as response:  # noqa: S310
+        assert response.status == 200
+    return project_id, document_id
+
+
+def _wait_for_terminal_status(
+    cognito_config: CognitoConfig,
+    token: str,
+    project_id: str,
+    document_id: str,
+    *,
+    timeout_s: float = 180.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        status, body = _request(
+            "GET",
+            f"{cognito_config.api_base_url}/projects/{project_id}/documents/{document_id}",
+            token=token,
+        )
+        assert status == 200, body
+        if body["status"] in ("READY", "FAILED"):
+            return body
+        time.sleep(5)
+    pytest.fail(f"document {document_id} did not reach a terminal status within {timeout_s}s")
+
+
+@dataclass(frozen=True)
+class ApiHelpers:
+    request: Any = _request
+    upload_fixture: Any = _upload_fixture
+    wait_for_terminal_status: Any = _wait_for_terminal_status
+
+
+@pytest.fixture(scope="session")
+def api() -> ApiHelpers:
+    return ApiHelpers()
