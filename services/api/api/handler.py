@@ -111,7 +111,7 @@ def _dispatch(route_key: str, event: dict[str, Any]) -> dict[str, Any]:
             ),
         )
 
-    if route_key == "POST /projects/{projectId}/documents/{documentId}:ingest":
+    if route_key == "POST /projects/{projectId}/documents/{documentId}/ingest":
         owner_sub = _owner_sub(event)
         project_id = _path(event, "projectId")
         document_id = _path(event, "documentId")

@@ -120,7 +120,7 @@ def test_ingest_pipeline_reaches_ready_with_expected_chunks_and_a_hand_checked_r
     try:
         status, body = _request(
             "POST",
-            f"{cognito_config.api_base_url}/projects/{project_id}/documents/{document_id}:ingest",
+            f"{cognito_config.api_base_url}/projects/{project_id}/documents/{document_id}/ingest",
             token=seeded_user_token,
         )
         assert status == 202, body

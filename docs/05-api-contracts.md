@@ -71,7 +71,7 @@ DynamoDB items), and returns immediately. The project disappears from `GET /proj
 
 ```
 POST   /projects/{projectId}/documents            → 201 {document, upload}
-POST   /projects/{projectId}/documents/{documentId}:ingest   → 202 {executionArn}
+POST   /projects/{projectId}/documents/{documentId}/ingest   → 202 {executionArn}
 GET    /projects/{projectId}/documents            → {items: [Document], nextCursor}
 GET    /projects/{projectId}/documents/{documentId}          → Document
 DELETE /projects/{projectId}/documents/{documentId}          → 202 {status: "DELETING"}
@@ -133,7 +133,7 @@ PATCH  /conversations/{conversationId}           {title?, pinnedDocumentIds?} �
 DELETE /conversations/{conversationId}           → 204
 GET    /conversations/{conversationId}/messages  ?limit=&cursor= → {items: [Message], nextCursor}
 POST   /conversations/{conversationId}/messages  {text} → 202 {userMessage, assistantMessageId, channel}
-POST   /conversations/{conversationId}/messages/{messageId}:cancel → 202
+POST   /conversations/{conversationId}/messages/{messageId}/cancel → 202
 ```
 
 `POST .../messages` is the only interesting one:
@@ -158,7 +158,7 @@ The client should subscribe to the channel **before** posting where possible; if
 subscribes after, it reconciles by `GET /conversations/{c}/messages` — see
 [06-frontend.md](06-frontend.md#reconnection-and-reconciliation).
 
-`:cancel` sets a cancellation flag on the message item. The worker checks it between stream
+`/cancel` sets a cancellation flag on the message item. The worker checks it between stream
 chunks and stops. It is best-effort: an already-completed turn returns `202` and does nothing.
 
 ```jsonc

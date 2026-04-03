@@ -14,7 +14,7 @@ export function useDocuments(projectId: string | null) {
   });
 }
 
-/** docs/06-frontend.md#upload-flow: create → presigned PUT → invalidate. `:ingest` is not
+/** docs/06-frontend.md#upload-flow: create → presigned PUT → invalidate. `/ingest` is not
  * called — there is no ingestion pipeline until Phase 3, so a freshly uploaded document stays
  * `PENDING` (the documented Phase 2 exit criterion). */
 export function useCreateDocument(projectId: string) {

@@ -73,7 +73,7 @@ describe("CwdComputeStack", () => {
         "PATCH /projects/{projectId}",
         "POST /projects",
         "POST /projects/{projectId}/documents",
-        "POST /projects/{projectId}/documents/{documentId}:ingest",
+        "POST /projects/{projectId}/documents/{documentId}/ingest",
       ].sort(),
     );
   });

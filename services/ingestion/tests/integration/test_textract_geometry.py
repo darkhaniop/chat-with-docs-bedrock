@@ -112,7 +112,7 @@ def test_scanned_pdf_produces_textract_derived_chunks_with_in_bounds_rects(
     try:
         status, body = _request(
             "POST",
-            f"{cognito_config.api_base_url}/projects/{project_id}/documents/{document_id}:ingest",
+            f"{cognito_config.api_base_url}/projects/{project_id}/documents/{document_id}/ingest",
             token=seeded_user_token,
         )
         assert status == 202, body

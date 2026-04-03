@@ -18,7 +18,7 @@ import type * as sfn from "aws-cdk-lib/aws-stepfunctions";
  * > "Key.$"}`) is not exercised by any offline `cdk synth`/jest assertion beyond "the JSON looks
  * > right" — it needs a real Distributed Map execution against a real `probe.json` object to
  * > confirm Step Functions accepts a JsonPath `Key` here. Recorded as a blocker in
- * > docs/10-roadmap.md's Phase 3 log; re-check the first time `:ingest` is actually run against
+ * > docs/10-roadmap.md's Phase 3 log; re-check the first time `/ingest` is actually run against
  * > the deployed `dev` stack.
  */
 export class DynamicKeyJsonItemReader implements sfn.IItemReader {

@@ -187,7 +187,7 @@ sequenceDiagram
     A->>S: create presigned PUT
     A-->>U: {documentId, uploadUrl}
     U->>S: PUT file
-    U->>A: POST /projects/{p}/documents/{d}:ingest
+    U->>A: POST /projects/{p}/documents/{d}/ingest
     A->>F: StartExecution
     A-->>U: 202
     loop per stage
@@ -197,7 +197,7 @@ sequenceDiagram
     F->>E: publish {documentId, status: READY | FAILED}
 ```
 
-The client-driven two-step (`create` then `:ingest`) is deliberate: it means an abandoned
+The client-driven two-step (`create` then `/ingest`) is deliberate: it means an abandoned
 upload leaves a `PENDING` DynamoDB row and an orphan S3 object cleaned up by a lifecycle rule,
 rather than a half-run state machine. S3 event notifications are *not* used to trigger
 ingestion, because they cannot carry the project/document identity we need without a lookup

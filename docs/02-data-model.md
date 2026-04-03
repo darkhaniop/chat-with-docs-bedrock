@@ -199,7 +199,7 @@ Lifecycle rules:
 | `artifacts/` | transition to Infrequent Access after 30 days |
 | all | abort incomplete multipart uploads after 1 day |
 
-Objects for a `PENDING` document that never gets a `:ingest` call are swept by a daily
+Objects for a `PENDING` document that never gets a `/ingest` call are swept by a daily
 scheduled Lambda rather than a lifecycle rule, because the rule cannot see DynamoDB state.
 
 ## S3 Vectors

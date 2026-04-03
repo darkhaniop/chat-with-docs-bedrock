@@ -165,7 +165,7 @@ export class CwdComputeStack extends Stack {
       ["/projects/{projectId}/documents", apigwv2.HttpMethod.GET],
       ["/projects/{projectId}/documents/{documentId}", apigwv2.HttpMethod.GET],
       ["/projects/{projectId}/documents/{documentId}", apigwv2.HttpMethod.DELETE],
-      ["/projects/{projectId}/documents/{documentId}:ingest", apigwv2.HttpMethod.POST],
+      ["/projects/{projectId}/documents/{documentId}/ingest", apigwv2.HttpMethod.POST],
       ["/projects/{projectId}/documents/{documentId}/source-url", apigwv2.HttpMethod.GET],
       [
         "/projects/{projectId}/documents/{documentId}/pages/{page}/render-url",

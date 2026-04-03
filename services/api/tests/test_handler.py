@@ -325,7 +325,7 @@ def test_render_url_returns_a_presigned_get_for_a_valid_page() -> None:
 def _ingest(project_id: str, document_id: str, **kwargs: Any) -> tuple[int, dict[str, Any]]:
     return _call(
         _event(
-            "POST /projects/{projectId}/documents/{documentId}:ingest",
+            "POST /projects/{projectId}/documents/{documentId}/ingest",
             path_parameters={"projectId": project_id, "documentId": document_id},
             **kwargs,
         )

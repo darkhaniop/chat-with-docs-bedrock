@@ -1,5 +1,5 @@
 """Step Functions adapter for starting an ingestion execution
-(docs/03-ingestion.md#state-machine). Used only by `api`'s `:ingest` route — the state machine's
+(docs/03-ingestion.md#state-machine). Used only by `api`'s `/ingest` route — the state machine's
 own tasks never call back into this module.
 """
 

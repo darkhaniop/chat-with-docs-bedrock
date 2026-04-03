@@ -31,7 +31,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:b7b87146150fdf1c3f84b159ee25fdaa65312fa673e6b19620f936a024507f9d",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bb008797213843fc2c06ea4d000b6e3b27b9a0e4f0b1951f0bd1476d9344aa78",
           },
         },
         "Environment": {
@@ -995,31 +995,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
       },
       "Type": "AWS::Lambda::Permission",
     },
-    "HttpApiPOSTprojectsprojectIddocumentsdocumentIdingest00B26E92": {
-      "Properties": {
-        "ApiId": {
-          "Ref": "HttpApiF5A9A8A7",
-        },
-        "AuthorizationType": "JWT",
-        "AuthorizerId": {
-          "Ref": "HttpApiJwtAuthorizer14F16BDB",
-        },
-        "RouteKey": "POST /projects/{projectId}/documents/{documentId}:ingest",
-        "Target": {
-          "Fn::Join": [
-            "",
-            [
-              "integrations/",
-              {
-                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
-              },
-            ],
-          ],
-        },
-      },
-      "Type": "AWS::ApiGatewayV2::Route",
-    },
-    "HttpApiPOSTprojectsprojectIddocumentsdocumentIdingestApiIntegrationPermissionFA9AF35F": {
+    "HttpApiPOSTprojectsprojectIddocumentsdocumentIdingestApiIntegrationPermission13907F08": {
       "Properties": {
         "Action": "lambda:InvokeFunction",
         "FunctionName": {
@@ -1041,12 +1017,36 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               {
                 "Ref": "HttpApiF5A9A8A7",
               },
-              "/*/*/projects/{projectId}/documents/{documentId}:ingest",
+              "/*/*/projects/{projectId}/documents/{documentId}/ingest",
             ],
           ],
         },
       },
       "Type": "AWS::Lambda::Permission",
+    },
+    "HttpApiPOSTprojectsprojectIddocumentsdocumentIdingestF149A95F": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "POST /projects/{projectId}/documents/{documentId}/ingest",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
     },
     "IngestionPipelineStateMachineAA924511": {
       "DeletionPolicy": "Delete",
@@ -1389,7 +1389,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
           },
         },
         "Environment": {
@@ -1577,7 +1577,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
           },
         },
         "Environment": {
@@ -1713,7 +1713,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
           },
         },
         "Environment": {
@@ -1940,7 +1940,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
           },
         },
         "Environment": {
@@ -2128,7 +2128,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c12c0f4d248d92ab34e6b92cdbea6e7a9cf83ab13707bf79b4bca17090053b5a",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3769d33dc59a65f2bd57b6371bf7508b383f21e2621cf10cc3b8a854ea4accaa",
           },
         },
         "Environment": {
@@ -2264,7 +2264,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:b7b87146150fdf1c3f84b159ee25fdaa65312fa673e6b19620f936a024507f9d",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bb008797213843fc2c06ea4d000b6e3b27b9a0e4f0b1951f0bd1476d9344aa78",
           },
         },
         "Environment": {

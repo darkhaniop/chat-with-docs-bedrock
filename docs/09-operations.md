@@ -180,7 +180,7 @@ invocation alarm above, per-user rate limits, and Lambda reserved concurrency.
    failed state and its input are right there.
 3. For Textract throttling: lower Distributed Map `MaxConcurrency`, or request a quota
    increase.
-4. Re-run with `POST .../:ingest` — idempotent, deletes partial vectors first.
+4. Re-run with `POST .../ingest` — idempotent, deletes partial vectors first.
 
 ### Citations are landing on the wrong text
 

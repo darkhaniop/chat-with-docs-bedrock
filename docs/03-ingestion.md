@@ -1,7 +1,7 @@
 # 03 — Ingestion pipeline
 
 One Step Functions **Standard** execution per document, started by the `api` Lambda when the
-client calls `POST /projects/{p}/documents/{d}:ingest`. Standard rather than Express because
+client calls `POST /projects/{p}/documents/{d}/ingest`. Standard rather than Express because
 a 500-page PDF can exceed five minutes, we want full execution history for debugging, and we
 use a Distributed Map.
 
@@ -68,7 +68,7 @@ with exponential backoff (2 s base, 2× rate, 4 attempts) and a `Catch` to `Mark
    `infra/lib/compute-stack.ts`). Write Page items to DynamoDB. Publish an ingestion event.
 
    > The document's `status` is flipped to `PROCESSING` earlier than this step, by the `api`
-   > Lambda's `:ingest` handler itself (synchronously, before `StartExecution` is even called) —
+   > Lambda's `/ingest` handler itself (synchronously, before `StartExecution` is even called) —
    > not by Probe. Doing it in the API layer closes a race where a client double-clicking
    > "ingest" could start two concurrent executions before Probe got a chance to run; Probe's
    > own `update_document_ingestion` call only fills in `ingestion.startedAt`.
@@ -231,7 +231,7 @@ attempts on page 12", "Encrypted PDF: password required", "Page count 1420 excee
 page limit"). Publishes `document.failed`. Partial artifacts and partial vectors are left in
 place; the retry path is a full re-ingest, which deletes them first.
 
-Re-ingest is exposed as `POST /projects/{p}/documents/{d}:ingest` on a document already in
+Re-ingest is exposed as `POST /projects/{p}/documents/{d}/ingest` on a document already in
 `FAILED` or `READY` — same endpoint, idempotent by design.
 
 ## Known failure modes and how they surface

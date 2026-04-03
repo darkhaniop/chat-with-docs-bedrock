@@ -1,5 +1,5 @@
 """Daily scheduled Lambda (docs/02-data-model.md#s3-layout): deletes `PENDING` documents whose
-client never called `:ingest`, along with their `raw/` S3 object. Runs as a second CMD on the
+client never called `/ingest`, along with their `raw/` S3 object. Runs as a second CMD on the
 same `api` Docker image (docs/01-architecture.md#compute-packaging) — it shares `cwd-api`'s
 dependency set and has nothing large enough (PyMuPDF, Pillow, …) to justify its own image.
 """

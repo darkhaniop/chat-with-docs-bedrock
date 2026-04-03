@@ -360,7 +360,7 @@ class Repo:
     def update_document_ingestion(self, document_id: str, **fields: Any) -> Document:
         """Merges `fields` into the existing `ingestion` sub-object rather than replacing it
         wholesale, so a later pipeline step (e.g. `ingest-finalize` setting `finishedAt`) can
-        never silently wipe out what an earlier one (e.g. the API's `:ingest` handler setting
+        never silently wipe out what an earlier one (e.g. the API's `/ingest` handler setting
         `executionArn`) already wrote. Every ingestion pipeline step should call this instead of
         `update_document(document_id, ingestion=...)` directly."""
         document = self.get_document(document_id)
