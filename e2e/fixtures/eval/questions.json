@@ -1,0 +1,173 @@
+{
+  "corpus": [
+    "born-digital.pdf",
+    "two-column.pdf",
+    "rotated.pdf",
+    "scanned.pdf",
+    "slide-export.pdf",
+    "photograph.jpg"
+  ],
+  "questions": [
+    {
+      "id": "bd-1",
+      "question": "What was the facility's uptime in Q3?",
+      "expectedPages": [{"document": "born-digital.pdf", "page": 1}],
+      "expectedSentenceContains": "94% uptime",
+      "tags": []
+    },
+    {
+      "id": "bd-2",
+      "question": "Why did the facility's uptime improve in Q3?",
+      "expectedPages": [{"document": "born-digital.pdf", "page": 1}],
+      "expectedSentenceContains": "new cooling loop installed in August",
+      "tags": []
+    },
+    {
+      "id": "bd-3",
+      "question": "How much did maintenance costs decrease relative to Q2?",
+      "expectedPages": [{"document": "born-digital.pdf", "page": 1}],
+      "expectedSentenceContains": "decreased by 12%",
+      "tags": []
+    },
+    {
+      "id": "bd-4",
+      "question": "When is the facility's next scheduled inspection?",
+      "expectedPages": [{"document": "born-digital.pdf", "page": 1}],
+      "expectedSentenceContains": "next scheduled inspection is in January",
+      "tags": []
+    },
+    {
+      "id": "bd-5",
+      "question": "Were there any safety incidents at the facility this quarter?",
+      "expectedPages": [{"document": "born-digital.pdf", "page": 1}],
+      "expectedSentenceContains": "No safety incidents were recorded",
+      "tags": []
+    },
+    {
+      "id": "bd-6",
+      "question": "Did staffing levels change during the quarter?",
+      "expectedPages": [{"document": "born-digital.pdf", "page": 1}],
+      "expectedSentenceContains": "Staffing levels remained stable",
+      "tags": []
+    },
+    {
+      "id": "tc-1",
+      "question": "How much did the sentence-aware chunking strategy improve recall over fixed-width chunking?",
+      "expectedPages": [{"document": "two-column.pdf", "page": 1}],
+      "expectedSentenceContains": "8 points of recall at k=10",
+      "tags": []
+    },
+    {
+      "id": "tc-2",
+      "question": "How many sentences of overlap were used between adjacent chunks in the chunking study?",
+      "expectedPages": [{"document": "two-column.pdf", "page": 1}],
+      "expectedSentenceContains": "Overlap of one sentence",
+      "tags": []
+    },
+    {
+      "id": "tc-3",
+      "question": "What kinds of documents does the held-out corpus in the chunking study span?",
+      "expectedPages": [{"document": "two-column.pdf", "page": 1}],
+      "expectedSentenceContains": "technical manuals, financial filings, and scientific papers",
+      "tags": []
+    },
+    {
+      "id": "tc-4",
+      "question": "What happens to retrieval quality when a sentence is split across chunk boundaries?",
+      "expectedPages": [{"document": "two-column.pdf", "page": 1}],
+      "expectedSentenceContains": "Sentences that are split across chunks lose context",
+      "tags": []
+    },
+    {
+      "id": "rot-1",
+      "question": "Why must PyMuPDF normalise extracted line rectangles at extraction time rather than render time for a rotated page?",
+      "expectedPages": [{"document": "rotated.pdf", "page": 1}],
+      "expectedSentenceContains": "the highlight will land in the wrong place when viewed upright",
+      "tags": []
+    },
+    {
+      "id": "rot-2",
+      "question": "What rotation flag is this page stored with?",
+      "expectedPages": [{"document": "rotated.pdf", "page": 1}],
+      "expectedSentenceContains": "90 degree rotation flag",
+      "tags": []
+    },
+    {
+      "id": "scan-1",
+      "question": "Who is the scanned letter addressed to?",
+      "expectedPages": [{"document": "scanned.pdf", "page": 1}],
+      "expectedSentenceContains": "Ms. Alvarez",
+      "tags": ["scanned"]
+    },
+    {
+      "id": "scan-2",
+      "question": "What date was the correspondence letter dated?",
+      "expectedPages": [{"document": "scanned.pdf", "page": 1}],
+      "expectedSentenceContains": "March 3rd",
+      "tags": ["scanned"]
+    },
+    {
+      "id": "scan-3",
+      "question": "How long will it take to forward copies of the requested records mentioned in the scanned letter?",
+      "expectedPages": [{"document": "scanned.pdf", "page": 1}],
+      "expectedSentenceContains": "ten business days",
+      "tags": ["scanned"]
+    },
+    {
+      "id": "scan-4",
+      "question": "Who signed the scanned letter?",
+      "expectedPages": [{"document": "scanned.pdf", "page": 1}],
+      "expectedSentenceContains": "Records Office",
+      "tags": ["scanned"]
+    },
+    {
+      "id": "slide-1",
+      "question": "How much did revenue grow quarter over quarter, per the business review slide?",
+      "expectedPages": [{"document": "slide-export.pdf", "page": 1}],
+      "expectedSentenceContains": "Revenue up 14% quarter over quarter",
+      "tags": []
+    },
+    {
+      "id": "slide-2",
+      "question": "How many new enterprise customers were signed, per the business review slide?",
+      "expectedPages": [{"document": "slide-export.pdf", "page": 1}],
+      "expectedSentenceContains": "Two new enterprise customers signed",
+      "tags": []
+    },
+    {
+      "id": "slide-3",
+      "question": "What was the churn rate mentioned in the business review slide?",
+      "expectedPages": [{"document": "slide-export.pdf", "page": 1}],
+      "expectedSentenceContains": "Churn held flat at 2.1%",
+      "tags": []
+    },
+    {
+      "id": "chart-1",
+      "question": "What was Q4 revenue according to the quarterly revenue chart?",
+      "expectedPages": [{"document": "slide-export.pdf", "page": 2}],
+      "expectedSentenceContains": "$2.9M",
+      "tags": ["chart"]
+    },
+    {
+      "id": "chart-2",
+      "question": "Which quarter had the lowest revenue on the quarterly revenue chart?",
+      "expectedPages": [{"document": "slide-export.pdf", "page": 2}],
+      "expectedSentenceContains": "Q1",
+      "tags": ["chart"]
+    },
+    {
+      "id": "photo-1",
+      "question": "What is the title written on the whiteboard in the photograph?",
+      "expectedPages": [{"document": "photograph.jpg", "page": 1}],
+      "expectedSentenceContains": "Sprint Planning",
+      "tags": ["scanned"]
+    },
+    {
+      "id": "photo-2",
+      "question": "What is one of the action items listed on the sprint planning whiteboard?",
+      "expectedPages": [{"document": "photograph.jpg", "page": 1}],
+      "expectedSentenceContains": "ship citations demo",
+      "tags": ["scanned"]
+    }
+  ]
+}

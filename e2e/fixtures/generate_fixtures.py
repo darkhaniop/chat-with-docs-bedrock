@@ -220,6 +220,32 @@ def scanned_pdf() -> None:
     image_path.unlink()
 
 
+def _revenue_by_quarter_chart_image() -> Image.Image:
+    """A genuine bar chart (not just bulleted text) for the eval corpus's "chart question"
+    (docs/08-testing.md#citation-fidelity-evaluation: "at least one chart question"). Bar/axis
+    labels are baked into the raster, not the PDF text layer, so this page's low text density
+    routes it through Textract OCR (docs/03-ingestion.md#step-1--probe) — the labels are still
+    citable text, and the bars themselves are what the page-kind vector gives visual recall on.
+    """
+    width, height = 960, 540
+    image = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((60, 40), "Quarterly Revenue ($M)", fill="black")
+    quarters = [("Q1", 2.1), ("Q2", 2.3), ("Q3", 2.6), ("Q4", 2.9)]
+    chart_bottom, chart_top, bar_width, gap = 460, 120, 120, 60
+    max_value = max(v for _, v in quarters)
+    x = 100
+    for label, value in quarters:
+        bar_height = int((value / max_value) * (chart_bottom - chart_top))
+        top = chart_bottom - bar_height
+        draw.rectangle([x, top, x + bar_width, chart_bottom], fill="#4472C4", outline="black")
+        draw.text((x + bar_width // 2 - 10, top - 25), f"${value}M", fill="black")
+        draw.text((x + bar_width // 2 - 10, chart_bottom + 15), label, fill="black")
+        x += bar_width + gap
+    draw.line([80, chart_bottom, 900, chart_bottom], fill="black", width=2)
+    return image
+
+
 def slide_export_pdf() -> None:
     doc = fitz.open()
     page = doc.new_page(width=960, height=540)  # 16:9 slide
@@ -233,6 +259,13 @@ def slide_export_pdf() -> None:
     for bullet in bullets:
         page.insert_text((80, y), f"• {bullet}", fontsize=18)
         y += 50
+
+    chart_page = doc.new_page(width=960, height=540)
+    chart_image_path = FIXTURES_DIR / "_chart_source.png"
+    _revenue_by_quarter_chart_image().save(chart_image_path)
+    chart_page.insert_image(chart_page.rect, filename=str(chart_image_path))
+    chart_image_path.unlink()
+
     doc.save(FIXTURES_DIR / "slide-export.pdf")
     doc.close()
 

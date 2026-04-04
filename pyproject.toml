@@ -7,6 +7,8 @@ dependencies = []
 
 [project.scripts]
 cwd-check = "scripts.cwd_check:main"
+cwd-reindex = "scripts.cwd_reindex:main"
+cwd-eval = "scripts.cwd_eval:main"
 
 [build-system]
 requires = ["hatchling"]
