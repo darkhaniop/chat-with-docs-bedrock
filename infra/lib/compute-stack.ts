@@ -10,9 +10,11 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecrAssets from "aws-cdk-lib/aws-ecr-assets";
 import * as events from "aws-cdk-lib/aws-events";
 import * as eventsTargets from "aws-cdk-lib/aws-events-targets";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
+import type * as s3vectors from "aws-cdk-lib/aws-s3vectors";
 import type { Construct } from "constructs";
 import { IngestionPipeline } from "./ingestion-pipeline";
 import { dashboardName } from "./naming";
@@ -24,6 +26,7 @@ export interface CwdComputeStackProps extends StackProps {
   readonly webDistributionDomainName: string;
   readonly table: dynamodb.ITableV2;
   readonly documentsBucket: s3.IBucket;
+  readonly vectorBucket: s3vectors.CfnVectorBucket;
 }
 
 /** The deployed commit, for `/health` (it's how drift between `main` and the deployed stack is
@@ -63,6 +66,7 @@ export class CwdComputeStack extends Stack {
       env2: props.env2,
       table: props.table,
       documentsBucket: props.documentsBucket,
+      vectorBucket: props.vectorBucket,
     });
 
     const apiImageCode = lambda.DockerImageCode.fromImageAsset(repoRoot, {
@@ -77,6 +81,7 @@ export class CwdComputeStack extends Stack {
       CWD_VERSION: currentVersion(repoRoot),
       CWD_COMMIT: currentCommit(),
       CWD_DOCUMENTS_BUCKET_NAME: props.documentsBucket.bucketName,
+      CWD_VECTOR_BUCKET_NAME: props.vectorBucket.vectorBucketName as string,
     };
 
     const apiLogGroup = new logs.LogGroup(this, "ApiLogGroup", {
@@ -202,6 +207,13 @@ export class CwdComputeStack extends Stack {
       props.documentsBucket.grantReadWrite(fn, prefix);
       props.documentsBucket.grantDelete(fn, prefix);
     }
+    const vectorBucketArn = props.vectorBucket.attrVectorBucketArn;
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3vectors:DeleteVectors", "s3vectors:DeleteIndex"],
+        resources: [vectorBucketArn, `${vectorBucketArn}/index/*`],
+      }),
+    );
   }
 
   private _grantSweeperPermissions(fn: lambda.IFunction, props: CwdComputeStackProps): void {

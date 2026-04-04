@@ -39,6 +39,7 @@ describe("the full app", () => {
       webDistributionDomainName: webStack.distribution.domainName,
       table: dataStack.table,
       documentsBucket: dataStack.documentsBucket,
+      vectorBucket: dataStack.vectorBucket,
     });
 
     expect(() => app.synth()).not.toThrow();

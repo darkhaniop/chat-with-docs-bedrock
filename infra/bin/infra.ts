@@ -58,4 +58,5 @@ new CwdComputeStack(app, stackName(env2, "Compute"), {
   webDistributionDomainName: webStack.distribution.domainName,
   table: dataStack.table,
   documentsBucket: dataStack.documentsBucket,
+  vectorBucket: dataStack.vectorBucket,
 });

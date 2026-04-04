@@ -13,16 +13,30 @@ from moto import mock_aws
 
 from api import deps
 from common.config import get_settings
+from common.testing.vectors import FakeVectorIndex
 
 _BUCKET_NAME = "cwd-documents-test-111122223333"
+_VECTOR_BUCKET_NAME = "cwd-vectors-test-111122223333"
 _STATE_MACHINE_DEFINITION = (
     '{"StartAt": "Probe", "States": {"Probe": {"Type": "Pass", "End": true}}}'
 )
 
 
+@pytest.fixture
+def fake_vector_index(monkeypatch: pytest.MonkeyPatch) -> FakeVectorIndex:
+    """`moto` doesn't mock `s3vectors` — `api.deps.get_vector_index` is monkeypatched to a fake
+    the same way `services/ingestion`'s handler tests already do, rather than hitting real AWS."""
+    fake = FakeVectorIndex()
+    monkeypatch.setattr(deps, "get_vector_index", lambda: fake)
+    return fake
+
+
 @pytest.fixture(autouse=True)
-def aws_stack(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def aws_stack(
+    monkeypatch: pytest.MonkeyPatch, fake_vector_index: FakeVectorIndex
+) -> Iterator[None]:
     monkeypatch.setenv("CWD_DOCUMENTS_BUCKET_NAME", _BUCKET_NAME)
+    monkeypatch.setenv("CWD_VECTOR_BUCKET_NAME", _VECTOR_BUCKET_NAME)
     with mock_aws():
         settings = get_settings()
         dynamodb = boto3.client("dynamodb", region_name=settings.aws_region)

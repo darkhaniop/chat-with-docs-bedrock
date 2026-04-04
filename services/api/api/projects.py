@@ -9,8 +9,10 @@ from typing import Any
 
 from api import documents, validation
 from common import authz
+from common.config import get_settings
 from common.repo import Repo
 from common.storage import DocumentsStore
+from common.vectors import VectorIndexProtocol
 
 
 def create(repo: Repo, owner_sub: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -37,14 +39,25 @@ def patch(repo: Repo, owner_sub: str, project_id: str, body: dict[str, Any]) -> 
     return project.to_api()
 
 
-def delete(repo: Repo, store: DocumentsStore, owner_sub: str, project_id: str) -> dict[str, Any]:
-    """docs/05-api-contracts.md#projects: flips status and returns immediately. There is no
-    ingestion pipeline yet (Phase 3), so every document under the project is still just
-    metadata plus one `raw/` object — cheap enough to clean up inline rather than via a
-    separate queued cleanup job. Revisit once documents can carry pages/chunks/vectors."""
+def delete(
+    repo: Repo,
+    store: DocumentsStore,
+    vectors: VectorIndexProtocol,
+    owner_sub: str,
+    project_id: str,
+) -> dict[str, Any]:
+    """docs/05-api-contracts.md#projects: flips status and returns immediately, cleaning up
+    inline rather than via a separate queued job. docs/02-data-model.md#s3-vectors: "Deleting a
+    project deletes the whole index" — one `delete_index_if_present` call rather than per-
+    document vector deletion, since every document in the project shares the same index.
+    Per-document Page/Chunk cleanup (`delete_pages_and_chunks`) is added here in Phase 4 — a gap
+    left over from Phase 2, when a project's documents were still just metadata plus a `raw/`
+    object with nothing else to clean up."""
     authz.require_project(repo, owner_sub, project_id)
     for document in repo.list_all_documents(project_id):
         documents.delete_storage(store, document)
+        repo.delete_pages_and_chunks(document.document_id)
         repo.delete_document(document)
+    vectors.delete_index_if_present(get_settings().vector_index_name(project_id))
     repo.delete_project(project_id, owner_sub)
     return {"status": "DELETING"}

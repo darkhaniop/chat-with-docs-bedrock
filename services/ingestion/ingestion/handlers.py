@@ -24,6 +24,7 @@ from common.storage import blocks_key, chunks_key, embed_render_key, probe_key, 
 from ingestion import deps
 from ingestion.chunk import ChunkDraft, assemble_chunks, segment_page_sentences
 from ingestion.chunk import Line as ChunkLine
+from ingestion.embed import embed_chunks, embed_pages
 from ingestion.extract import extract_pdf_lines
 from ingestion.ocr import OcrLine, convert_lines_to_canonical, detect_lines_with_retry
 from ingestion.probe import probe as run_probe
@@ -307,6 +308,68 @@ def chunk_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, An
     return {"chunkCount": len(all_chunks)}
 
 
+# -- ingest-ensure-index --------------------------------------------------------------------------
+
+
+def ensure_index_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, Any]:
+    """Idempotently create the project's S3 Vectors index. `VectorIndex.create_index_if_missing`
+    swallows the live-confirmed `ConflictException` on an index that already exists
+    (`tests/contract/smoke_s3vectors.py`)."""
+    project_id = event["projectId"]
+    logger.append_keys(projectId=project_id, documentId=event["documentId"])
+
+    settings = get_settings()
+    vector_index = deps.get_vector_index()
+    index_name = settings.vector_index_name(project_id)
+    vector_index.create_index_if_missing(index_name, non_filterable_metadata_keys=["preview"])
+    return {"indexName": index_name}
+
+
+# -- ingest-embed-and-index -------------------------------------------------------------------
+
+
+def embed_and_index_handler(event: dict[str, Any], context: LambdaContext) -> dict[str, Any]:
+    """One `kind: "text"` vector per chunk and one `kind: "page"` vector per page, both from the
+    same Nova model/dimension so they share a vector space. Deletion of a *previous* run's
+    vectors on re-ingest happens in `api`'s `/ingest` handler, before this document's old
+    Page/Chunk items (and therefore their chunk ids) are gone."""
+    project_id, document_id = event["projectId"], event["documentId"]
+    logger.append_keys(projectId=project_id, documentId=document_id)
+
+    settings = get_settings()
+    repo = deps.get_repo()
+    store = deps.get_store()
+    nova = deps.get_nova()
+    vector_index = deps.get_vector_index()
+    events = deps.get_events()
+
+    chunks = repo.list_chunks(document_id)
+    pages = repo.list_pages(document_id)
+    page_jobs = [(page, store.get_object(page.s3.embed)) for page in pages if page.s3 is not None]
+
+    chunk_vectors = embed_chunks(nova, chunks, max_concurrency=settings.embed_max_concurrency)
+    page_vectors = embed_pages(nova, page_jobs, max_concurrency=settings.embed_max_concurrency)
+    all_vectors = chunk_vectors + page_vectors
+
+    index_name = settings.vector_index_name(project_id)
+    if all_vectors:
+        vector_index.put_vectors(index_name, all_vectors)
+
+    page_count = event["pageCount"]
+    events.publish(
+        _project_channel(project_id),
+        "document.progress",
+        {
+            "documentId": document_id,
+            "stage": "embed",
+            "pagesDone": page_count,
+            "pagesTotal": page_count,
+        },
+        seq=page_count + 2,
+    )
+    return {"vectorCount": len(all_vectors)}
+
+
 # -- ingest-finalize ------------------------------------------------------------------------------
 
 
@@ -337,7 +400,7 @@ def finalize_handler(event: dict[str, Any], context: LambdaContext) -> dict[str,
             "chunkCount": chunk_count,
             "ocrPages": ocr_page_count,
         },
-        seq=page_count + 2,
+        seq=page_count + 3,
     )
     return {"status": "READY"}
 

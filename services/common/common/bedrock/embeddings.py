@@ -20,9 +20,27 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from common.config import Settings
+
+
+class NovaEmbeddingsProtocol(Protocol):
+    """Mirrors `common.events.EventsPublisher`'s pattern: the subset of `NovaEmbeddings` ingest/
+    answering code depends on, so `common.testing.embeddings.FakeNova` can structurally satisfy
+    it without inheriting from the real (boto3-backed) class."""
+
+    def embed_text(
+        self, text: str, *, purpose: Literal["GENERIC_INDEX", "GENERIC_RETRIEVAL"]
+    ) -> list[float]: ...
+
+    def embed_image(
+        self,
+        image_bytes: bytes,
+        *,
+        image_format: Literal["png", "jpeg"],
+        purpose: Literal["GENERIC_INDEX", "GENERIC_RETRIEVAL"],
+    ) -> list[float]: ...
 
 
 class NovaEmbeddings:

@@ -94,3 +94,33 @@ def test_put_query_filter_and_delete_roundtrip(index: VectorIndex) -> None:
     index.delete_vectors(_INDEX, ["doc1:chunk1", "doc1:chunk2", "doc2:p0001"])
     remaining = index.query(_INDEX, [1.0, 0, 0, 0, 0, 0, 0, 0], top_k=3)
     assert remaining == []
+
+
+def test_delete_vectors_with_unknown_keys_on_an_existing_index_is_a_silent_no_op(
+    index: VectorIndex,
+) -> None:
+    index.delete_vectors(_INDEX, ["never:existed"])  # must not raise
+
+
+def test_create_index_twice_raises_conflict_exception(
+    settings: Settings, s3vectors: object, vector_bucket: None
+) -> None:
+    scoped = settings.model_copy(update={"embed_dim": _DIM})
+    vector_index = VectorIndex(scoped, s3vectors, vector_bucket_name=_BUCKET)
+    vector_index.create_index("dup-index", non_filterable_metadata_keys=["preview"])
+    try:
+        with pytest.raises(s3vectors.exceptions.ConflictException):  # type: ignore[attr-defined]
+            vector_index.create_index("dup-index", non_filterable_metadata_keys=["preview"])
+    finally:
+        vector_index.delete_index("dup-index")
+
+
+def test_delete_index_or_vectors_on_a_missing_index_raises_not_found_exception(
+    s3vectors: object,
+) -> None:
+    with pytest.raises(s3vectors.exceptions.NotFoundException):  # type: ignore[attr-defined]
+        s3vectors.delete_index(vectorBucketName=_BUCKET, indexName="does-not-exist")  # type: ignore[attr-defined]
+    with pytest.raises(s3vectors.exceptions.NotFoundException):  # type: ignore[attr-defined]
+        s3vectors.delete_vectors(  # type: ignore[attr-defined]
+            vectorBucketName=_BUCKET, indexName="does-not-exist", keys=["a:b"]
+        )

@@ -9,11 +9,13 @@ from functools import lru_cache
 
 import boto3
 
+from common.bedrock.embeddings import NovaEmbeddings, NovaEmbeddingsProtocol
 from common.config import get_settings
 from common.events import AppSyncEventsPublisher, EventsPublisher
 from common.ocr import Textract
 from common.repo import Repo
 from common.storage import DocumentsStore
+from common.vectors import VectorIndex, VectorIndexProtocol
 
 
 @lru_cache(maxsize=1)
@@ -42,3 +44,18 @@ def get_textract() -> Textract:
 def get_events() -> EventsPublisher:
     settings = get_settings()
     return AppSyncEventsPublisher(domain=settings.events_http_domain, region=settings.aws_region)
+
+
+@lru_cache(maxsize=1)
+def get_vector_index() -> VectorIndexProtocol:
+    settings = get_settings()
+    client = boto3.client("s3vectors", region_name=settings.aws_region)
+    bucket = os.environ["CWD_VECTOR_BUCKET_NAME"]
+    return VectorIndex(settings, client, vector_bucket_name=bucket)
+
+
+@lru_cache(maxsize=1)
+def get_nova() -> NovaEmbeddingsProtocol:
+    settings = get_settings()
+    client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
+    return NovaEmbeddings(settings, client)

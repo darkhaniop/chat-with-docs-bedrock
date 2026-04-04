@@ -28,7 +28,9 @@ _FIXTURES = [
     ("two-column.pdf", "application/pdf", 1),
     ("rotated.pdf", "application/pdf", 1),
     ("scanned.pdf", "application/pdf", 1),
-    ("slide-export.pdf", "application/pdf", 1),
+    # 2 pages since Phase 4 added a chart page for the eval corpus's "chart question"
+    # (e2e/fixtures/eval/questions.json) — docs/08-testing.md#citation-fidelity-evaluation.
+    ("slide-export.pdf", "application/pdf", 2),
     ("photograph.jpg", "image/jpeg", 1),
 ]
 

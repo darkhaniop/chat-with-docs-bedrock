@@ -527,14 +527,38 @@ class Repo:
         return [chunks_by_key[key] for key in keys if key in chunks_by_key]
 
     def list_chunks(self, document_id: str) -> list[Chunk]:
-        """Unpaginated — used by the integration test that verifies a hand-checked sentence
-        rect end to end (no HTTP route exposes chunks yet; that's Phase 5's answering path,
-        which reads them via `batch_get_chunks` from known ids, not a listing)."""
+        """Unpaginated — used by `ingest-embed-and-index` (embeds every chunk of a document),
+        `api`'s document/project deletion (derives vector keys before the items are gone), and
+        the integration test that verifies a hand-checked sentence rect end to end."""
         chunks: list[Chunk] = []
         kwargs: dict[str, Any] = {
             "TableName": self._table,
             "KeyConditionExpression": "pk = :pk AND begins_with(sk, :prefix)",
             "ExpressionAttributeValues": _ser({":pk": f"DOC#{document_id}", ":prefix": "CHUNK#"}),
+        }
+        while True:
+            response = self._client.query(**kwargs)
+            chunks.extend(Chunk.model_validate(_deser(i)) for i in response.get("Items", []))
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                return chunks
+            kwargs["ExclusiveStartKey"] = last_key
+
+    def list_chunks_for_page(self, document_id: str, page_number: int) -> list[Chunk]:
+        """docs/04-retrieval-and-citations.md#4-fusion-and-selection: "If a selected page
+        contributed no text chunk ..., include its highest-ordinal text chunk if one exists" —
+        a page can have chunks that simply didn't rank in the top-`topK` text hits, so this
+        looks them up directly rather than trusting the hit list. A `FilterExpression` on the
+        same single-partition `CHUNK#` query `list_chunks` already does — a page's chunk count
+        is small (bounded by `chunk_hard_cap_tokens`), so this is cheap."""
+        chunks: list[Chunk] = []
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "pk = :pk AND begins_with(sk, :prefix)",
+            "FilterExpression": "pageNumber = :page",
+            "ExpressionAttributeValues": _ser(
+                {":pk": f"DOC#{document_id}", ":prefix": "CHUNK#", ":page": page_number}
+            ),
         }
         while True:
             response = self._client.query(**kwargs)

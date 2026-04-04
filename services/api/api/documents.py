@@ -12,6 +12,7 @@ from common.config import Settings, get_settings
 from common.models import Document, DocumentIngestion
 from common.repo import Repo, new_id
 from common.storage import DocumentsStore, render_key, source_key
+from common.vectors import VectorIndexProtocol, chunk_vector_key, page_vector_key
 from common.workflow import Workflow
 
 
@@ -24,6 +25,26 @@ def delete_storage(store: DocumentsStore, document: Document) -> None:
     store.delete_prefix(f"raw/{document.project_id}/{document.document_id}/")
     store.delete_prefix(f"pages/{document.project_id}/{document.document_id}/")
     store.delete_prefix(f"artifacts/{document.project_id}/{document.document_id}/")
+
+
+def delete_vectors(repo: Repo, vectors: VectorIndexProtocol, document: Document) -> None:
+    """docs/02-data-model.md#s3-vectors: "Deleting a document deletes its vectors by key (keys
+    are deterministic, so no query is needed: page vectors from `pageCount`, chunk vectors from
+    the chunk items)." Must run *before* `repo.delete_pages_and_chunks` — chunk ids are random
+    ULIDs with no other source, so once the Chunk items are gone there is no way to recover
+    which keys to delete. `delete_vectors_if_present` no-ops if the project's index was never
+    created (a document that never got past `Probe`)."""
+    keys = [
+        chunk_vector_key(document.document_id, chunk.chunk_id)
+        for chunk in repo.list_chunks(document.document_id)
+    ]
+    if document.page_count:
+        keys.extend(
+            page_vector_key(document.document_id, page_number)
+            for page_number in range(1, document.page_count + 1)
+        )
+    index_name = get_settings().vector_index_name(document.project_id)
+    vectors.delete_vectors_if_present(index_name, keys)
 
 
 def create(
@@ -69,9 +90,19 @@ def get(repo: Repo, owner_sub: str, project_id: str, document_id: str) -> dict[s
 
 
 def delete(
-    repo: Repo, store: DocumentsStore, owner_sub: str, project_id: str, document_id: str
+    repo: Repo,
+    store: DocumentsStore,
+    vectors: VectorIndexProtocol,
+    owner_sub: str,
+    project_id: str,
+    document_id: str,
 ) -> dict[str, Any]:
+    """docs/02-data-model.md's documented two-phase order: mark `DELETING`, delete vectors,
+    delete S3 prefixes, delete chunk/page items, then delete the metadata — a crash after any
+    step leaves orphan storage (cheap, sweepable) rather than dangling references."""
     document = authz.require_document(repo, owner_sub, project_id, document_id)
+    repo.update_document(document_id, status="DELETING")
+    delete_vectors(repo, vectors, document)
     delete_storage(store, document)
     repo.delete_pages_and_chunks(document_id)
     if document.ingestion.chunk_count:
@@ -84,6 +115,7 @@ def ingest(
     repo: Repo,
     store: DocumentsStore,
     workflow: Workflow,
+    vectors: VectorIndexProtocol,
     owner_sub: str,
     project_id: str,
     document_id: str,
@@ -94,13 +126,17 @@ def ingest(
     docs/03-ingestion.md's `MarkFailed` section: "the retry path is a full re-ingest, which
     deletes them first" — including reversing this document's earlier contribution to the
     project's `chunkCount`, since `ingest-finalize` will add the new count back once the fresh
-    run completes.
+    run completes. Vectors are deleted *here*, not inside the state machine's `EmbedAndIndex`
+    step, because this is the last point the old chunk ids (needed to derive their vector keys)
+    are still known — `repo.delete_pages_and_chunks` below deletes the Chunk items, and chunk
+    ids are random ULIDs with no other source.
     """
     document = authz.require_document(repo, owner_sub, project_id, document_id)
     if document.status in ("PROCESSING", "DELETING"):
         raise conflict("INGEST_IN_PROGRESS", "An ingestion is already running for this document.")
 
     if document.status in ("READY", "FAILED"):
+        delete_vectors(repo, vectors, document)
         store.delete_prefix(f"pages/{project_id}/{document_id}/")
         store.delete_prefix(f"artifacts/{project_id}/{document_id}/")
         repo.delete_pages_and_chunks(document_id)

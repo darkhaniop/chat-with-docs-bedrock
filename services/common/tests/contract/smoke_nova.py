@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import base64
+import json
 
 import pytest
 
@@ -51,3 +52,50 @@ def test_dimension_is_a_fixed_enum(settings: Settings, bedrock_runtime: object) 
         embeddings = NovaEmbeddings(scoped_settings, bedrock_runtime)
         vector = embeddings.embed_text("hello world", purpose="GENERIC_RETRIEVAL")
         assert len(vector) == dim
+
+
+def _invoke_raw(bedrock_runtime: object, body: dict[str, object]) -> str:
+    try:
+        bedrock_runtime.invoke_model(  # type: ignore[attr-defined]
+            modelId="amazon.nova-2-multimodal-embeddings-v1:0", body=json.dumps(body)
+        )
+    except Exception as exc:  # noqa: BLE001 — we only want the message text to compare
+        return str(exc)
+    raise AssertionError("expected a ValidationException, the call unexpectedly succeeded")
+
+
+def test_batch_embedding_task_type_does_not_exist(
+    settings: Settings, bedrock_runtime: object
+) -> None:
+    bogus = _invoke_raw(bedrock_runtime, {"taskType": "NOT_A_REAL_TASK_TYPE"})
+    batch = _invoke_raw(
+        bedrock_runtime,
+        {
+            "taskType": "BATCH_EMBEDDING",
+            "batchEmbeddingParams": {
+                "embeddingDimension": settings.embed_dim,
+                "embeddingPurpose": "GENERIC_INDEX",
+                "texts": [{"truncationMode": "END", "value": "hello"}],
+            },
+        },
+    )
+    assert bogus == batch
+    assert "required key [messages]" in bogus
+
+
+def test_a_malformed_single_embedding_request_errors_on_the_actual_field(
+    bedrock_runtime: object,
+) -> None:
+    error = _invoke_raw(
+        bedrock_runtime,
+        {
+            "taskType": "SINGLE_EMBEDDING",
+            "singleEmbeddingParams": {
+                "embeddingDimension": 1024,
+                "embeddingPurpose": "GENERIC_INDEX",
+                # should be an object, not a list:
+                "text": [{"truncationMode": "END", "value": "hi"}],
+            },
+        },
+    )
+    assert "singleEmbeddingParams/text" in error

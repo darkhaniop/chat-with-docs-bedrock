@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     vector_query_top_k: int = 40
     rrf_k: int = 60
 
+    # Embedding at ingest time (docs/03-ingestion.md#step-5--embedandindex). Nova has no
+    # synchronous batch-embedding request shape (confirmed live, `tests/contract/smoke_nova.py`)
+    # — "batched" means bounded-concurrency individual `SINGLE_EMBEDDING` calls, not one call per
+    # N items. `services/ingestion/ingestion/embed.py`.
+    embed_max_concurrency: int = 8
+
     # Ingestion limits (docs/07-security.md#abuse-and-cost-controls, docs/03-ingestion.md #Probe)
     max_document_pages: int = 1000
     max_document_bytes: int = 200 * 1024 * 1024

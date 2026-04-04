@@ -404,6 +404,28 @@ def test_list_chunks_returns_empty_for_a_document_with_none(repo: Repo) -> None:
     assert repo.list_chunks(document_id) == []
 
 
+def test_list_chunks_for_page_filters_to_only_that_page(repo: Repo) -> None:
+    project_id, document_id = _make_document(repo)
+    repo.batch_write_chunks(
+        [
+            _make_chunk(document_id, project_id, "p1-a", page_number=1),
+            _make_chunk(document_id, project_id, "p1-b", page_number=1),
+            _make_chunk(document_id, project_id, "p2-a", page_number=2),
+        ]
+    )
+
+    fetched = repo.list_chunks_for_page(document_id, 1)
+
+    assert {c.chunk_id for c in fetched} == {"p1-a", "p1-b"}
+
+
+def test_list_chunks_for_page_returns_empty_for_a_page_with_none(repo: Repo) -> None:
+    project_id, document_id = _make_document(repo)
+    repo.batch_write_chunks([_make_chunk(document_id, project_id, "p1-a", page_number=1)])
+
+    assert repo.list_chunks_for_page(document_id, 5) == []
+
+
 def test_delete_pages_and_chunks_removes_only_that_document(repo: Repo) -> None:
     project_id, document_id = _make_document(repo)
     other_document_id = "other-doc"

@@ -110,6 +110,19 @@ def test_probe_slide_export_pdf(settings: Settings) -> None:
     assert result.pages[0].height == pytest.approx(540.0)
 
 
+def test_probe_slide_export_pdf_chart_page_is_image_only_and_routes_to_textract(
+    settings: Settings,
+) -> None:
+    """Page 2 (docs/08-testing.md#citation-fidelity-evaluation's "chart question" fixture) is a
+    raster bar chart with no PDF text layer — same shape as `scanned.pdf`, just embedded as a
+    second page of an otherwise text-layer PDF rather than its own document."""
+    result = probe(_read("slide-export.pdf"), "application/pdf", settings)
+    assert result.page_count == 2
+    chart_page = result.pages[1]
+    assert chart_page.text_source == "textract"
+    assert chart_page.text_density == 0.0
+
+
 def test_probe_photograph_is_one_page_textract_unconditionally(settings: Settings) -> None:
     result = probe(_read("photograph.jpg"), "image/jpeg", settings)
     assert result.kind == "image"

@@ -4,6 +4,9 @@ import json
 from typing import Any
 
 from api.handler import lambda_handler
+from common.config import get_settings
+from common.testing.vectors import FakeVectorIndex
+from common.vectors import chunk_vector_key, page_vector_key
 
 _CLAIMS = {"sub": "user-1"}
 _OTHER_CLAIMS = {"sub": "user-2"}
@@ -223,9 +226,54 @@ def test_get_document_404s_when_the_project_in_the_path_is_wrong() -> None:
     assert status == 404
 
 
-def test_delete_document_removes_it_and_decrements_project_count() -> None:
+def test_delete_document_removes_it_and_decrements_project_count(
+    fake_vector_index: FakeVectorIndex,
+) -> None:
+    from api import deps
+    from common.models import Chunk, DocumentIngestion, Page, Sentence
+
     project = _create_project()
     document = _upload_document(project["projectId"])["document"]
+    project_id, document_id = project["projectId"], document["documentId"]
+
+    repo = deps.get_repo()
+    repo.put_page(
+        Page(
+            document_id=document_id,
+            page_number=1,
+            width=612.0,
+            height=792.0,
+            text_source="pdf",
+            text_density=0.5,
+        )
+    )
+    repo.batch_write_chunks(
+        [
+            Chunk(
+                chunk_id="c1",
+                document_id=document_id,
+                project_id=project_id,
+                page_number=1,
+                ordinal=0,
+                text="Some chunk text.",
+                sentences=[Sentence(i=0, text="Some chunk text.", rects=[(0.0, 0.0, 1.0, 1.0)])],
+                token_estimate=5,
+                created_at="2026-01-01T00:00:00Z",
+            )
+        ]
+    )
+    repo.update_document(
+        document_id, status="READY", page_count=1, ingestion=DocumentIngestion(chunk_count=1)
+    )
+    index_name = get_settings().vector_index_name(project_id)
+    fake_vector_index.create_index_if_missing(index_name, non_filterable_metadata_keys=[])
+    fake_vector_index.put_vectors(
+        index_name,
+        [
+            (chunk_vector_key(document_id, "c1"), [1.0, 0.0], {}),
+            (page_vector_key(document_id, 1), [0.0, 1.0], {}),
+        ],
+    )
 
     status, body = _call(
         _event(
@@ -245,12 +293,19 @@ def test_delete_document_removes_it_and_decrements_project_count() -> None:
         )
     )
     assert body["documentCount"] == 0
+    assert fake_vector_index.query(index_name, [1.0, 0.0], top_k=10) == []
 
 
-def test_deleting_a_project_cascades_to_its_documents() -> None:
+def test_deleting_a_project_cascades_to_its_documents(
+    fake_vector_index: FakeVectorIndex,
+) -> None:
     project = _create_project()
     _upload_document(project["projectId"], filename="a.pdf")
     _upload_document(project["projectId"], filename="b.pdf")
+
+    index_name = get_settings().vector_index_name(project["projectId"])
+    fake_vector_index.create_index_if_missing(index_name, non_filterable_metadata_keys=[])
+    fake_vector_index.put_vectors(index_name, [("doc1:c1", [1.0, 0.0], {})])
 
     status, _ = _call(
         _event(
@@ -267,6 +322,8 @@ def test_deleting_a_project_cascades_to_its_documents() -> None:
         )
     )
     assert status == 404
+    # docs/02-data-model.md#s3-vectors: "Deleting a project deletes the whole index."
+    assert fake_vector_index.query(index_name, [1.0, 0.0], top_k=10) == []
 
 
 def test_source_url_returns_a_presigned_get() -> None:
@@ -374,7 +431,9 @@ def test_ingest_under_someone_elses_document_is_404() -> None:
     assert status == 404
 
 
-def test_reingesting_a_ready_document_sweeps_prior_pages_chunks_and_chunk_count() -> None:
+def test_reingesting_a_ready_document_sweeps_prior_pages_chunks_chunk_count_and_vectors(
+    fake_vector_index: FakeVectorIndex,
+) -> None:
     from api import deps
     from common.models import Chunk, DocumentIngestion, Page, Sentence
 
@@ -412,7 +471,17 @@ def test_reingesting_a_ready_document_sweeps_prior_pages_chunks_and_chunk_count(
     repo.update_document(
         document_id,
         status="READY",
+        page_count=1,
         ingestion=DocumentIngestion(chunk_count=1, ocr_pages=0),
+    )
+    index_name = get_settings().vector_index_name(project_id)
+    fake_vector_index.create_index_if_missing(index_name, non_filterable_metadata_keys=[])
+    fake_vector_index.put_vectors(
+        index_name,
+        [
+            (chunk_vector_key(document_id, "c1"), [1.0, 0.0], {}),
+            (page_vector_key(document_id, 1), [0.0, 1.0], {}),
+        ],
     )
 
     status, body = _ingest(project_id, document_id)
@@ -423,3 +492,4 @@ def test_reingesting_a_ready_document_sweeps_prior_pages_chunks_and_chunk_count(
     refreshed_project = repo.get_project(project_id)
     assert refreshed_project is not None
     assert refreshed_project.chunk_count == 0
+    assert fake_vector_index.query(index_name, [1.0, 0.0], top_k=10) == []

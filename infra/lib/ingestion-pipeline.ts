@@ -1,11 +1,12 @@
 import * as path from "node:path";
-import { Duration, RemovalPolicy } from "aws-cdk-lib";
+import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecrAssets from "aws-cdk-lib/aws-ecr-assets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import type * as s3 from "aws-cdk-lib/aws-s3";
+import type * as s3vectors from "aws-cdk-lib/aws-s3vectors";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as tasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import { Construct } from "constructs";
@@ -16,7 +17,15 @@ export interface IngestionPipelineProps {
   readonly env2: string;
   readonly table: dynamodb.ITableV2;
   readonly documentsBucket: s3.IBucket;
+  readonly vectorBucket: s3vectors.CfnVectorBucket;
 }
+
+// services/common/common/config.py's `Settings.nova_model_id` default — kept in sync by hand,
+// same as `DISTRIBUTED_MAP_MAX_CONCURRENCY` below, since Python and CDK don't share a config
+// source. Nova has no inference profile (docs/10-roadmap.md's Phase 0 findings: only Sonnet/
+// Haiku need the `us.`/`global.` prefix), so this is a plain foundation-model ARN with no
+// account segment.
+const NOVA_MODEL_ID = "amazon.nova-2-multimodal-embeddings-v1:0";
 
 // docs/03-ingestion.md#state-machine: "Every state has Retry on States.TaskFailed/
 // Lambda.ServiceException/Lambda.TooManyRequestsException with exponential backoff (2 s base,
@@ -53,26 +62,31 @@ const DISTRIBUTED_MAP_MAX_CONCURRENCY = 20;
 
 /**
  * docs/03-ingestion.md's Step Functions Standard state machine: Probe -> ProcessPages
- * (Distributed Map) -> Chunk -> Finalize, each with Catch -> MarkFailed. `EnsureIndex`/
- * `EmbedAndIndex` are not built yet — Phase 4 inserts them between Chunk and Finalize once
- * `services/common/common/vectors.py` is finalised; this phase reaches `READY` without vectors
- * ("No embeddings yet" is this phase's explicit goal, per docs/10-roadmap.md's Phase 3 header).
+ * (Distributed Map) -> Chunk -> EnsureIndex -> EmbedAndIndex -> Finalize, each with
+ * Catch -> MarkFailed.
  */
 export class IngestionPipeline extends Construct {
   public readonly stateMachine: sfn.StateMachine;
   public readonly probeFunction: lambda.DockerImageFunction;
   public readonly pageFunction: lambda.DockerImageFunction;
   public readonly chunkFunction: lambda.DockerImageFunction;
+  public readonly ensureIndexFunction: lambda.DockerImageFunction;
+  public readonly embedAndIndexFunction: lambda.DockerImageFunction;
   public readonly finalizeFunction: lambda.DockerImageFunction;
   public readonly markFailedFunction: lambda.DockerImageFunction;
 
   constructor(scope: Construct, id: string, props: IngestionPipelineProps) {
     super(scope, id);
 
+    const region = Stack.of(this).region;
+    const novaModelArn = `arn:aws:bedrock:${region}::foundation-model/${NOVA_MODEL_ID}`;
+    const vectorBucketArn = props.vectorBucket.attrVectorBucketArn;
+
     const repoRoot = path.join(__dirname, "..", "..");
     const sharedEnvironment = {
       CWD_ENV: props.env2,
       CWD_DOCUMENTS_BUCKET_NAME: props.documentsBucket.bucketName,
+      CWD_VECTOR_BUCKET_NAME: props.vectorBucket.vectorBucketName as string,
     };
 
     const makeFunction = (name: string, cmd: string, memoryMb: number): lambda.DockerImageFunction => {
@@ -127,6 +141,45 @@ export class IngestionPipeline extends Construct {
     this.chunkFunction = makeFunction("ingest-chunk", "ingestion.handlers.chunk_handler", 1024);
     props.documentsBucket.grantRead(this.chunkFunction, "artifacts/*");
     props.documentsBucket.grantWrite(this.chunkFunction, "artifacts/*");
+
+    // docs/07-security.md#iam: `ingest-*` gets `s3vectors:*` scoped to the environment's vector
+    // bucket (and every index inside it) — a broad action wildcard is fine here because it's
+    // resource-scoped to one bucket, unlike the enumerated-model-ARN rule that governs Bedrock.
+    const grantVectorBucketAccess = (fn: lambda.IFunction): void => {
+      fn.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ["s3vectors:*"],
+          resources: [vectorBucketArn, `${vectorBucketArn}/index/*`],
+        }),
+      );
+    };
+
+    // docs/03-ingestion.md#step-4--ensureindex: idempotent index creation only, no S3/Bedrock
+    // access needed.
+    this.ensureIndexFunction = makeFunction(
+      "ingest-ensure-index",
+      "ingestion.handlers.ensure_index_handler",
+      512,
+    );
+    grantVectorBucketAccess(this.ensureIndexFunction);
+
+    // docs/03-ingestion.md#step-5--embedandindex: reads chunks/pages (DynamoDB, granted by
+    // `makeFunction` already) and each page's `.embed.jpg` render, embeds with Nova, writes
+    // vectors. `bedrock:InvokeModel` is scoped to the Nova model ARN only
+    // (docs/07-security.md#iam: "Model ARNs are enumerated, never wildcarded").
+    this.embedAndIndexFunction = makeFunction(
+      "ingest-embed-and-index",
+      "ingestion.handlers.embed_and_index_handler",
+      1024,
+    );
+    props.documentsBucket.grantRead(this.embedAndIndexFunction, "pages/*");
+    grantVectorBucketAccess(this.embedAndIndexFunction);
+    this.embedAndIndexFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:InvokeModel"],
+        resources: [novaModelArn],
+      }),
+    );
 
     // docs/03-ingestion.md#step-6--finalize: Document/Project updates only, no S3 access.
     this.finalizeFunction = makeFunction("ingest-finalize", "ingestion.handlers.finalize_handler", 512);
@@ -218,6 +271,33 @@ export class IngestionPipeline extends Construct {
     chunkTask.addRetry(RETRY_PROPS);
     chunkTask.addCatch(errorBranch, { resultPath: "$.error" });
 
+    const ensureIndexTask = new tasks.LambdaInvoke(this, "EnsureIndex", {
+      lambdaFunction: this.ensureIndexFunction,
+      payloadResponseOnly: true,
+      retryOnServiceExceptions: false,
+      payload: sfn.TaskInput.fromObject({
+        "projectId.$": "$.projectId",
+        "documentId.$": "$.documentId",
+      }),
+      resultPath: "$.ensureIndexResult",
+    });
+    ensureIndexTask.addRetry(RETRY_PROPS);
+    ensureIndexTask.addCatch(errorBranch, { resultPath: "$.error" });
+
+    const embedAndIndexTask = new tasks.LambdaInvoke(this, "EmbedAndIndex", {
+      lambdaFunction: this.embedAndIndexFunction,
+      payloadResponseOnly: true,
+      retryOnServiceExceptions: false,
+      payload: sfn.TaskInput.fromObject({
+        "projectId.$": "$.projectId",
+        "documentId.$": "$.documentId",
+        "pageCount.$": "$.pageCount",
+      }),
+      resultPath: "$.embedResult",
+    });
+    embedAndIndexTask.addRetry(RETRY_PROPS);
+    embedAndIndexTask.addCatch(errorBranch, { resultPath: "$.error" });
+
     const finalizeTask = new tasks.LambdaInvoke(this, "Finalize", {
       lambdaFunction: this.finalizeFunction,
       payloadResponseOnly: true,
@@ -233,7 +313,12 @@ export class IngestionPipeline extends Construct {
     finalizeTask.addRetry(RETRY_PROPS);
     finalizeTask.addCatch(errorBranch, { resultPath: "$.error" });
 
-    const definition = probeTask.next(processPages).next(chunkTask).next(finalizeTask);
+    const definition = probeTask
+      .next(processPages)
+      .next(chunkTask)
+      .next(ensureIndexTask)
+      .next(embedAndIndexTask)
+      .next(finalizeTask);
 
     // Standard, not Express (docs/03-ingestion.md#state-machine): a 500-page PDF can exceed
     // five minutes, full execution history matters for debugging, and Distributed Map requires

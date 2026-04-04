@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from common.config import get_settings
 from common.storage import (
     blocks_key,
     chunks_key,
@@ -14,8 +15,11 @@ from common.storage import (
     render_key,
     source_key,
 )
+from common.testing.embeddings import FakeNova
 from common.testing.events import FakeEventsPublisher
+from common.testing.vectors import FakeVectorIndex
 from ingestion import deps, handlers
+from ingestion.embed import chunk_vector_key, page_vector_key
 
 _FIXTURES = Path(__file__).parents[3] / "e2e" / "fixtures"
 
@@ -24,6 +28,20 @@ _FIXTURES = Path(__file__).parents[3] / "e2e" / "fixtures"
 def fake_events(monkeypatch: pytest.MonkeyPatch) -> FakeEventsPublisher:
     fake = FakeEventsPublisher()
     monkeypatch.setattr(deps, "get_events", lambda: fake)
+    return fake
+
+
+@pytest.fixture
+def fake_vector_index(monkeypatch: pytest.MonkeyPatch) -> FakeVectorIndex:
+    fake = FakeVectorIndex()
+    monkeypatch.setattr(deps, "get_vector_index", lambda: fake)
+    return fake
+
+
+@pytest.fixture
+def fake_nova(monkeypatch: pytest.MonkeyPatch) -> FakeNova:
+    fake = FakeNova(get_settings())
+    monkeypatch.setattr(deps, "get_nova", lambda: fake)
     return fake
 
 
@@ -339,6 +357,72 @@ def test_chunk_handler_writes_chunk_items_and_jsonl(fake_events: FakeEventsPubli
     assert fetched.page_number == 1
     assert len(fetched.sentences) > 0
     assert fetched.sentences[0].i == 0
+
+
+# -- ensure_index_handler / embed_and_index_handler -------------------------------------------
+
+
+def test_ensure_index_handler_creates_the_project_index(
+    fake_vector_index: FakeVectorIndex,
+) -> None:
+    project_id, document_id = _seed_document()
+
+    result = handlers.ensure_index_handler(
+        {"projectId": project_id, "documentId": document_id}, context=None
+    )  # type: ignore[arg-type]
+
+    assert result["indexName"] == get_settings().vector_index_name(project_id)
+    # Idempotent: calling again must not raise (FakeVectorIndex.create_index_if_missing is a
+    # plain upsert, mirroring the live-confirmed ConflictException-swallowing behavior).
+    handlers.ensure_index_handler(
+        {"projectId": project_id, "documentId": document_id}, context=None
+    )  # type: ignore[arg-type]
+
+
+def test_embed_and_index_handler_writes_one_text_vector_per_chunk_and_one_page_vector_per_page(
+    fake_events: FakeEventsPublisher,
+    fake_vector_index: FakeVectorIndex,
+    fake_nova: FakeNova,
+) -> None:
+    project_id, document_id = _seed_document()
+    _put_source(project_id, document_id, "born-digital.pdf")
+    probe_result = handlers.probe_handler(
+        {
+            "projectId": project_id,
+            "documentId": document_id,
+            "s3Key": source_key(project_id, document_id, "pdf"),
+            "contentType": "application/pdf",
+        },
+        context=None,  # type: ignore[arg-type]
+    )
+    probe_json = json.loads(deps.get_store().get_object(probe_key(project_id, document_id)))
+    event = _page_event(project_id, document_id, probe_result, probe_json)
+    handlers.page_handler(event, context=None)  # type: ignore[arg-type]
+    handlers.chunk_handler(
+        {"projectId": project_id, "documentId": document_id, "pageCount": 1}, context=None
+    )  # type: ignore[arg-type]
+    handlers.ensure_index_handler(
+        {"projectId": project_id, "documentId": document_id}, context=None
+    )  # type: ignore[arg-type]
+
+    result = handlers.embed_and_index_handler(
+        {"projectId": project_id, "documentId": document_id, "pageCount": 1}, context=None
+    )  # type: ignore[arg-type]
+
+    chunks = deps.get_repo().list_chunks(document_id)
+    assert len(chunks) > 0
+    assert result["vectorCount"] == len(chunks) + 1  # + one page vector
+
+    index_name = get_settings().vector_index_name(project_id)
+    query_vector = fake_nova.embed_text(chunks[0].text, purpose="GENERIC_RETRIEVAL")
+    matches = {m.key for m in fake_vector_index.query(index_name, query_vector, top_k=50)}
+    assert chunk_vector_key(document_id, chunks[0].chunk_id) in matches
+    assert page_vector_key(document_id, 1) in matches
+
+    assert any(
+        e.event_type == "document.progress" and e.data["stage"] == "embed"
+        for e in fake_events.events
+    )
 
 
 # -- finalize_handler -------------------------------------------------------------------------

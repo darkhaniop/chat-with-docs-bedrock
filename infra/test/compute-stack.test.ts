@@ -30,6 +30,7 @@ beforeAll(() => {
     webDistributionDomainName: "d111111abcdef8.cloudfront.net",
     table: dataStack.table,
     documentsBucket: dataStack.documentsBucket,
+    vectorBucket: dataStack.vectorBucket,
   });
   template = Template.fromStack(stack);
 });
@@ -54,7 +55,7 @@ describe("CwdComputeStack", () => {
     const nonHealthRoutes = Object.values(routes).filter(
       (r) => r.Properties.RouteKey !== "GET /health",
     );
-    expect(nonHealthRoutes).toHaveLength(11);
+    expect(nonHealthRoutes).toHaveLength(12);
     for (const route of nonHealthRoutes) {
       expect(route.Properties.AuthorizationType).toBe("JWT");
       expect(route.Properties.AuthorizerId).toBeDefined();
@@ -88,16 +89,49 @@ describe("CwdComputeStack", () => {
     });
   });
 
-  it("gives every Lambda function (api, sweeper, and the five ingestion functions) its own distinct role", () => {
+  it("gives every Lambda function (api, sweeper, and the seven ingestion functions) its own distinct role", () => {
     const roles = template.findResources("AWS::IAM::Role");
-    expect(Object.keys(roles)).toHaveLength(8);
+    expect(Object.keys(roles)).toHaveLength(10);
   });
 
-  it("no role has any Bedrock permission at all", () => {
+  it("only ingest-embed-and-index has Bedrock permission, and only on the Nova model ARN, never wildcarded", () => {
     const policies = template.findResources("AWS::IAM::Policy");
-    for (const policy of Object.values(policies)) {
-      const statements = JSON.stringify(policy.Properties.PolicyDocument.Statement);
-      expect(statements).not.toMatch(/bedrock:/);
+    for (const [name, policy] of Object.entries(policies)) {
+      const statements = policy.Properties.PolicyDocument.Statement as Array<
+        Record<string, unknown>
+      >;
+      const bedrockStatements = statements.filter((s) =>
+        JSON.stringify(s.Action ?? "").includes("bedrock:"),
+      );
+      if (bedrockStatements.length === 0) continue;
+      expect(name).toContain("ingestembedandindex");
+      for (const statement of bedrockStatements) {
+        expect(statement.Action).toBe("bedrock:InvokeModel");
+        const resources = ([] as unknown[]).concat(statement.Resource ?? []);
+        expect(resources).not.toContain("*");
+        expect(JSON.stringify(resources)).toContain(
+          "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
+        );
+      }
+    }
+  });
+
+  it("scopes every s3vectors grant to the vector bucket, never wildcarded, and api never gets more than delete", () => {
+    const policies = template.findResources("AWS::IAM::Policy");
+    for (const [name, policy] of Object.entries(policies)) {
+      const statements = policy.Properties.PolicyDocument.Statement as Array<
+        Record<string, unknown>
+      >;
+      for (const statement of statements) {
+        const actions = ([] as unknown[]).concat(statement.Action ?? []);
+        if (!actions.some((a) => typeof a === "string" && a.startsWith("s3vectors:"))) continue;
+        const resources = ([] as unknown[]).concat(statement.Resource ?? []);
+        expect(resources).not.toContain("*");
+        expect(JSON.stringify(resources)).toContain("VectorBucket");
+        if (name.startsWith("ApiFunction")) {
+          expect(actions.sort()).toEqual(["s3vectors:DeleteIndex", "s3vectors:DeleteVectors"]);
+        }
+      }
     }
   });
 
@@ -191,17 +225,19 @@ describe("CwdComputeStack", () => {
     }
   });
 
-  it("gives each of the five ingestion Lambdas its own distinct command over the shared image", () => {
+  it("gives each of the seven ingestion Lambdas its own distinct command over the shared image", () => {
     const fns = template.findResources("AWS::Lambda::Function");
     const ingestionCommands = Object.values(fns)
       .map((fn) => fn.Properties.ImageConfig?.Command?.[0])
       .filter((cmd): cmd is string => typeof cmd === "string" && cmd.startsWith("ingestion."));
-    expect(new Set(ingestionCommands).size).toBe(5);
+    expect(new Set(ingestionCommands).size).toBe(7);
     expect(ingestionCommands.sort()).toEqual(
       [
         "ingestion.handlers.probe_handler",
         "ingestion.handlers.page_handler",
         "ingestion.handlers.chunk_handler",
+        "ingestion.handlers.ensure_index_handler",
+        "ingestion.handlers.embed_and_index_handler",
         "ingestion.handlers.finalize_handler",
         "ingestion.handlers.mark_failed_handler",
       ].sort(),

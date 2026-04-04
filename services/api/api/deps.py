@@ -13,6 +13,7 @@ import boto3
 from common.config import get_settings
 from common.repo import Repo
 from common.storage import DocumentsStore
+from common.vectors import VectorIndex, VectorIndexProtocol
 from common.workflow import Workflow
 
 
@@ -37,3 +38,11 @@ def get_workflow() -> Workflow:
     client = boto3.client("stepfunctions", region_name=settings.aws_region)
     state_machine_arn = os.environ["CWD_INGESTION_STATE_MACHINE_ARN"]
     return Workflow(client, state_machine_arn=state_machine_arn)
+
+
+@lru_cache(maxsize=1)
+def get_vector_index() -> VectorIndexProtocol:
+    settings = get_settings()
+    client = boto3.client("s3vectors", region_name=settings.aws_region)
+    bucket = os.environ["CWD_VECTOR_BUCKET_NAME"]
+    return VectorIndex(settings, client, vector_bucket_name=bucket)

@@ -31,7 +31,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:9f8267a0e70f0278c8f926d7440a5b19128208e138669d7de5509eb76b8824c4",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c57cbdd5f75b8876cb69d4c2546d4c6f42f675e319eae902a0d4c37ee68cbba0",
           },
         },
         "Environment": {
@@ -44,6 +44,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
             "CWD_INGESTION_STATE_MACHINE_ARN": {
               "Ref": "IngestionPipelineStateMachineAA924511",
             },
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
             "CWD_VERSION": "0.1.0",
           },
         },
@@ -231,6 +232,29 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
                   ],
                 ],
               },
+            },
+            {
+              "Action": [
+                "s3vectors:DeleteVectors",
+                "s3vectors:DeleteIndex",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttVectorBucketVectorBucketArnAA1E2656",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttVectorBucketVectorBucketArnAA1E2656",
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
             },
             {
               "Action": "states:StartExecution",
@@ -1077,10 +1101,24 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               {
                 "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
               },
-              "","Key.$":"$.probeKey"}}},"Chunk":{"Next":"Finalize","Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Type":"Task","ResultPath":"$.chunkResult","Resource":"",
+              "","Key.$":"$.probeKey"}}},"Chunk":{"Next":"EnsureIndex","Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Type":"Task","ResultPath":"$.chunkResult","Resource":"",
               {
                 "Fn::GetAtt": [
                   "IngestionPipelineingestchunkFunctionDED593A4",
+                  "Arn",
+                ],
+              },
+              "","Parameters":{"projectId.$":"$.projectId","documentId.$":"$.documentId","pageCount.$":"$.pageCount"}},"EnsureIndex":{"Next":"EmbedAndIndex","Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Type":"Task","ResultPath":"$.ensureIndexResult","Resource":"",
+              {
+                "Fn::GetAtt": [
+                  "IngestionPipelineingestensureindexFunction768F0FD4",
+                  "Arn",
+                ],
+              },
+              "","Parameters":{"projectId.$":"$.projectId","documentId.$":"$.documentId"}},"EmbedAndIndex":{"Next":"Finalize","Retry":[{"ErrorEquals":["States.TaskFailed","Lambda.ServiceException","Lambda.TooManyRequestsException"],"IntervalSeconds":2,"MaxAttempts":4,"BackoffRate":2}],"Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"MarkFailed"}],"Type":"Task","ResultPath":"$.embedResult","Resource":"",
+              {
+                "Fn::GetAtt": [
+                  "IngestionPipelineingestembedandindexFunction983E8436",
                   "Arn",
                 ],
               },
@@ -1294,6 +1332,58 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Resource": [
                 {
                   "Fn::GetAtt": [
+                    "IngestionPipelineingestensureindexFunction768F0FD4",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "IngestionPipelineingestensureindexFunction768F0FD4",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "IngestionPipelineingestembedandindexFunction983E8436",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "IngestionPipelineingestembedandindexFunction983E8436",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
                     "IngestionPipelineingestfinalizeFunctionD56A8FCC",
                     "Arn",
                   ],
@@ -1389,7 +1479,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:628dfc5984dc51ccc95d33c41639b3bcb1d7730983e24a03478232d0ebbacf40",
           },
         },
         "Environment": {
@@ -1398,6 +1488,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
         "FunctionName": "cwd-dev-ingest-chunk",
@@ -1566,6 +1657,349 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Delete",
     },
+    "IngestionPipelineingestembedandindexFunction983E8436": {
+      "DependsOn": [
+        "IngestionPipelineingestembedandindexFunctionServiceRoleDefaultPolicy5F6E7E85",
+        "IngestionPipelineingestembedandindexFunctionServiceRole448FA0BD",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:628dfc5984dc51ccc95d33c41639b3bcb1d7730983e24a03478232d0ebbacf40",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
+          },
+        },
+        "FunctionName": "cwd-dev-ingest-embed-and-index",
+        "ImageConfig": {
+          "Command": [
+            "ingestion.handlers.embed_and_index_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "IngestionPipelineingestembedandindexLogGroup2B8059EE",
+          },
+        },
+        "MemorySize": 1024,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "IngestionPipelineingestembedandindexFunctionServiceRole448FA0BD",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "IngestionPipelineingestembedandindexFunctionServiceRole448FA0BD": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "IngestionPipelineingestembedandindexFunctionServiceRoleDefaultPolicy5F6E7E85": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/pages/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3vectors:*",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttVectorBucketVectorBucketArnAA1E2656",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttVectorBucketVectorBucketArnAA1E2656",
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "bedrock:InvokeModel",
+              "Effect": "Allow",
+              "Resource": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelineingestembedandindexFunctionServiceRoleDefaultPolicy5F6E7E85",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelineingestembedandindexFunctionServiceRole448FA0BD",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelineingestembedandindexLogGroup2B8059EE": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-ingest-embed-and-index",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "IngestionPipelineingestensureindexFunction768F0FD4": {
+      "DependsOn": [
+        "IngestionPipelineingestensureindexFunctionServiceRoleDefaultPolicy9067E182",
+        "IngestionPipelineingestensureindexFunctionServiceRole6C30574C",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:628dfc5984dc51ccc95d33c41639b3bcb1d7730983e24a03478232d0ebbacf40",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
+          },
+        },
+        "FunctionName": "cwd-dev-ingest-ensure-index",
+        "ImageConfig": {
+          "Command": [
+            "ingestion.handlers.ensure_index_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "IngestionPipelineingestensureindexLogGroupC2EF6FD5",
+          },
+        },
+        "MemorySize": 512,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "IngestionPipelineingestensureindexFunctionServiceRole6C30574C",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "IngestionPipelineingestensureindexFunctionServiceRole6C30574C": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "IngestionPipelineingestensureindexFunctionServiceRoleDefaultPolicy9067E182": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "s3vectors:*",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttVectorBucketVectorBucketArnAA1E2656",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttVectorBucketVectorBucketArnAA1E2656",
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "IngestionPipelineingestensureindexFunctionServiceRoleDefaultPolicy9067E182",
+        "Roles": [
+          {
+            "Ref": "IngestionPipelineingestensureindexFunctionServiceRole6C30574C",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "IngestionPipelineingestensureindexLogGroupC2EF6FD5": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-ingest-ensure-index",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
     "IngestionPipelineingestfinalizeFunctionD56A8FCC": {
       "DependsOn": [
         "IngestionPipelineingestfinalizeFunctionServiceRoleDefaultPolicy8EAD87B2",
@@ -1577,7 +2011,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:628dfc5984dc51ccc95d33c41639b3bcb1d7730983e24a03478232d0ebbacf40",
           },
         },
         "Environment": {
@@ -1586,6 +2020,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
         "FunctionName": "cwd-dev-ingest-finalize",
@@ -1713,7 +2148,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:628dfc5984dc51ccc95d33c41639b3bcb1d7730983e24a03478232d0ebbacf40",
           },
         },
         "Environment": {
@@ -1722,6 +2157,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
         "FunctionName": "cwd-dev-ingest-page",
@@ -1940,7 +2376,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:628dfc5984dc51ccc95d33c41639b3bcb1d7730983e24a03478232d0ebbacf40",
           },
         },
         "Environment": {
@@ -1949,6 +2385,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
         "FunctionName": "cwd-dev-ingest-probe",
@@ -2128,7 +2565,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:1eca723d9af6d4c74f9568ec2eb88a0aad521f232322830960a36dd526d88123",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:628dfc5984dc51ccc95d33c41639b3bcb1d7730983e24a03478232d0ebbacf40",
           },
         },
         "Environment": {
@@ -2137,6 +2574,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
         "FunctionName": "cwd-dev-mark-failed",
@@ -2264,7 +2702,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:9f8267a0e70f0278c8f926d7440a5b19128208e138669d7de5509eb76b8824c4",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:c57cbdd5f75b8876cb69d4c2546d4c6f42f675e319eae902a0d4c37ee68cbba0",
           },
         },
         "Environment": {
@@ -2274,6 +2712,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
             "CWD_VERSION": "0.1.0",
           },
         },

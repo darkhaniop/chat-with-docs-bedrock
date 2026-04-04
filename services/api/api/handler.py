@@ -64,7 +64,10 @@ def _dispatch(route_key: str, event: dict[str, Any]) -> dict[str, Any]:
         owner_sub = _owner_sub(event)
         project_id = _path(event, "projectId")
         return _response(
-            202, projects.delete(deps.get_repo(), deps.get_store(), owner_sub, project_id)
+            202,
+            projects.delete(
+                deps.get_repo(), deps.get_store(), deps.get_vector_index(), owner_sub, project_id
+            ),
         )
 
     if route_key == "POST /projects/{projectId}/documents":
@@ -97,7 +100,14 @@ def _dispatch(route_key: str, event: dict[str, Any]) -> dict[str, Any]:
         document_id = _path(event, "documentId")
         return _response(
             202,
-            documents.delete(deps.get_repo(), deps.get_store(), owner_sub, project_id, document_id),
+            documents.delete(
+                deps.get_repo(),
+                deps.get_store(),
+                deps.get_vector_index(),
+                owner_sub,
+                project_id,
+                document_id,
+            ),
         )
 
     if route_key == "GET /projects/{projectId}/documents/{documentId}/source-url":
@@ -121,6 +131,7 @@ def _dispatch(route_key: str, event: dict[str, Any]) -> dict[str, Any]:
                 deps.get_repo(),
                 deps.get_store(),
                 deps.get_workflow(),
+                deps.get_vector_index(),
                 owner_sub,
                 project_id,
                 document_id,
