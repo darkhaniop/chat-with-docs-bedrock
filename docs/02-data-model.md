@@ -38,7 +38,6 @@ pk = PROJECT#{projectId}      sk = META                      # canonical
   entity: "Project",
   projectId, ownerSub,
   name, description,
-  vectorIndexName: "proj-{projectId}",
   documentCount: 3, chunkCount: 1420,
   createdAt, updatedAt
 }

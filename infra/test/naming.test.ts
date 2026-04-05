@@ -19,7 +19,7 @@ describe("naming", () => {
     expect(tableName("dev")).toBe("cwd-dev");
     expect(documentsBucketName("dev", "123456789012")).toBe("cwd-documents-dev-123456789012");
     expect(vectorBucketName("dev", "123456789012")).toBe("cwd-vectors-dev-123456789012");
-    expect(vectorIndexName("01JQABC")).toBe("proj-01JQABC");
+    expect(vectorIndexName("01JQABC")).toBe("proj-01jqabc");
     expect(siteBucketName("dev", "123456789012")).toBe("cwd-site-dev-123456789012");
     expect(ingestionStateMachineName("dev")).toBe("cwd-dev-ingest");
   });

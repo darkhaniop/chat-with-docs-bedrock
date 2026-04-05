@@ -36,9 +36,13 @@ export function siteBucketName(env: string, account: string): string {
   return `cwd-site-${env}-${account}`;
 }
 
-/** `proj-{projectId}` (docs/02-data-model.md#s3-vectors) — for reference; created at runtime. */
+/** `proj-{projectId}` (docs/02-data-model.md#s3-vectors) — for reference; created at runtime.
+ * Lowercased: S3 Vectors index names must be lowercase (confirmed live in Phase 4 —
+ * `CreateIndex` rejects an uppercase-containing name), and project ids are uppercase Crockford
+ * base32 ULIDs. Kept in sync by hand with `services/common/common/config.py`'s
+ * `Settings.vector_index_name`, the actual runtime implementation. */
 export function vectorIndexName(projectId: string): string {
-  return `proj-${projectId}`;
+  return `proj-${projectId.toLowerCase()}`;
 }
 
 /** Cognito Managed Login domain prefix. Must be globally unique per region. */

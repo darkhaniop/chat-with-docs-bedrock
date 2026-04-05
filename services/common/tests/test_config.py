@@ -18,5 +18,17 @@ def test_derived_names_include_env_and_account() -> None:
     assert settings.vector_index_name("proj123") == "proj-proj123"
 
 
+def test_vector_index_name_lowercases_a_ulid_project_id() -> None:
+    """S3 Vectors' `CreateIndex` rejects an uppercase-containing index name with
+    `ValidationException: Invalid index name`, confirmed live — real project ids
+    (`common.repo.new_id`) are uppercase Crockford base32 ULIDs, so this must lowercase them
+    (found live in Phase 4: every real ingestion failed at `EnsureIndex` until this was fixed)."""
+    settings = Settings(env="dev")
+    assert (
+        settings.vector_index_name("01M213QRNYK99MTBXYXKZTQ88Q")
+        == "proj-01m213qrnyk99mtbxyxkztq88q"
+    )
+
+
 def test_get_settings_is_cached() -> None:
     assert get_settings() is get_settings()

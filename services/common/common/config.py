@@ -135,7 +135,13 @@ class Settings(BaseSettings):
 
     @staticmethod
     def vector_index_name(project_id: str) -> str:
-        return f"proj-{project_id}"
+        # S3 Vectors index names must be lowercase (confirmed live: CreateIndex rejects an
+        # uppercase-containing name with `ValidationException: Invalid index name`, unlike the
+        # `PutVectors` vector `key` field, which accepts mixed case) — project ids are ULIDs
+        # (`common.repo.new_id`), whose canonical string form is uppercase Crockford base32, so
+        # this must lowercase them. Lowercasing preserves uniqueness (ULIDs never differ only by
+        # case).
+        return f"proj-{project_id.lower()}"
 
 
 @lru_cache(maxsize=1)
