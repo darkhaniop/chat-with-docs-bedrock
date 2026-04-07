@@ -19,6 +19,21 @@ import type { Construct } from "constructs";
 import { IngestionPipeline } from "./ingestion-pipeline";
 import { dashboardName } from "./naming";
 
+const SONNET_MODEL_ID = "us.anthropic.claude-sonnet-4-6";
+const HAIKU_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+
+const US_INFERENCE_PROFILE_REGIONS = ["us-east-1", "us-east-2", "us-west-2"];
+
+function bedrockInferenceProfileArns(modelId: string, region: string, account: string): string[] {
+  const bareModelId = modelId.replace(/^(us|global)\./, "");
+  return [
+    `arn:aws:bedrock:${region}:${account}:inference-profile/${modelId}`,
+    ...US_INFERENCE_PROFILE_REGIONS.map(
+      (r) => `arn:aws:bedrock:${r}::foundation-model/${bareModelId}`,
+    ),
+  ];
+}
+
 export interface CwdComputeStackProps extends StackProps {
   readonly env2: string;
   readonly userPoolClientId: string;
@@ -53,6 +68,7 @@ export class CwdComputeStack extends Stack {
   public readonly api: apigwv2.HttpApi;
   public readonly apiFunction: lambda.DockerImageFunction;
   public readonly sweeperFunction: lambda.DockerImageFunction;
+  public readonly answeringFunction: lambda.DockerImageFunction;
   public readonly ingestionPipeline: IngestionPipeline;
 
   constructor(scope: Construct, id: string, props: CwdComputeStackProps) {
@@ -90,20 +106,43 @@ export class CwdComputeStack extends Stack {
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
+    const answeringLogGroup = new logs.LogGroup(this, "AnsweringLogGroup", {
+      logGroupName: `/aws/lambda/cwd-${props.env2}-answering`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    this.answeringFunction = new lambda.DockerImageFunction(this, "AnsweringFunction", {
+      functionName: `cwd-${props.env2}-answering`,
+      code: lambda.DockerImageCode.fromImageAsset(repoRoot, {
+        file: "services/Dockerfile",
+        buildArgs: { SERVICE: "answering" },
+        platform: ecrAssets.Platform.LINUX_AMD64,
+        cmd: ["answering.handler.lambda_handler"],
+      }),
+      architecture: lambda.Architecture.X86_64,
+      memorySize: 2048,
+      timeout: Duration.minutes(5),
+      logGroup: answeringLogGroup,
+      environment: sharedEnvironment,
+    });
+    this._grantAnsweringPermissions(this.answeringFunction, props);
+
     this.apiFunction = new lambda.DockerImageFunction(this, "ApiFunction", {
       functionName: `cwd-${props.env2}-api`,
       code: apiImageCode,
       architecture: lambda.Architecture.X86_64,
       memorySize: 512,
-      timeout: Duration.seconds(10),
+      timeout: Duration.seconds(29),
       logGroup: apiLogGroup,
       environment: {
         ...sharedEnvironment,
         CWD_INGESTION_STATE_MACHINE_ARN: this.ingestionPipeline.stateMachine.stateMachineArn,
+        CWD_ANSWERING_FUNCTION_NAME: this.answeringFunction.functionName,
       },
     });
     this._grantApiPermissions(this.apiFunction, props);
     this.ingestionPipeline.stateMachine.grantStartExecution(this.apiFunction);
+    this.answeringFunction.grantInvoke(this.apiFunction);
 
     // A `PENDING` document whose client never called `:ingest` is swept daily rather than by a
     // bucket lifecycle rule, because the rule can't see DynamoDB state. Shares the `api` image
@@ -176,6 +215,14 @@ export class CwdComputeStack extends Stack {
         "/projects/{projectId}/documents/{documentId}/pages/{page}/render-url",
         apigwv2.HttpMethod.GET,
       ],
+      ["/projects/{projectId}/conversations", apigwv2.HttpMethod.POST],
+      ["/projects/{projectId}/conversations", apigwv2.HttpMethod.GET],
+      ["/conversations/{conversationId}", apigwv2.HttpMethod.GET],
+      ["/conversations/{conversationId}", apigwv2.HttpMethod.PATCH],
+      ["/conversations/{conversationId}", apigwv2.HttpMethod.DELETE],
+      ["/conversations/{conversationId}/messages", apigwv2.HttpMethod.GET],
+      ["/conversations/{conversationId}/messages", apigwv2.HttpMethod.POST],
+      ["/conversations/{conversationId}/messages/{messageId}/cancel", apigwv2.HttpMethod.POST],
     ];
     for (const [routePath, method] of authenticatedRoutes) {
       this.api.addRoutes({ path: routePath, methods: [method], integration, authorizer: jwtAuthorizer });
@@ -223,5 +270,32 @@ export class CwdComputeStack extends Stack {
       props.documentsBucket.grantRead(fn, prefix);
       props.documentsBucket.grantDelete(fn, prefix);
     }
+  }
+
+  private _grantAnsweringPermissions(fn: lambda.IFunction, props: CwdComputeStackProps): void {
+    props.table.grantReadWriteData(fn);
+    props.table.grant(fn, "dynamodb:TransactWriteItems");
+    props.documentsBucket.grantRead(fn, "pages/*");
+
+    const vectorBucketArn = props.vectorBucket.attrVectorBucketArn;
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3vectors:QueryVectors"],
+        resources: [vectorBucketArn, `${vectorBucketArn}/index/*`],
+      }),
+    );
+
+    const region = Stack.of(this).region;
+    const account = Stack.of(this).account;
+    const modelArns = [
+      ...bedrockInferenceProfileArns(SONNET_MODEL_ID, region, account),
+      ...bedrockInferenceProfileArns(HAIKU_MODEL_ID, region, account),
+    ];
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+        resources: modelArns,
+      }),
+    );
   }
 }

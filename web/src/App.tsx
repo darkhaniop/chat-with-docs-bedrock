@@ -3,6 +3,7 @@ import { Button } from "./components/ui/button";
 import { useAuth } from "./auth/useAuth";
 import { ProjectList } from "./features/projects/ProjectList";
 import { DocumentList } from "./features/documents/DocumentList";
+import { ChatPane } from "./features/chat/ChatPane";
 
 export function App() {
   const { user, isLoading, error, signIn, signOut } = useAuth();
@@ -41,7 +42,12 @@ function Workspace({ email, onSignOut }: { email: string | undefined; onSignOut:
       <div className="flex flex-1">
         <ProjectList selectedProjectId={selectedProjectId} onSelect={setSelectedProjectId} />
         {selectedProjectId !== null ? (
-          <DocumentList projectId={selectedProjectId} />
+          <>
+            <div className="w-80 border-r border-slate-200">
+              <DocumentList projectId={selectedProjectId} />
+            </div>
+            <ChatPane projectId={selectedProjectId} />
+          </>
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
             Select or create a project to see its documents.

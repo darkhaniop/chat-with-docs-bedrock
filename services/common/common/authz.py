@@ -4,18 +4,14 @@ Every route handler that touches a project- or document-scoped resource calls on
 before any other work. Cross-tenant access raises `NotFound` — 404, never 403 — because there
 is no legitimate reason for a caller to distinguish "does not exist" from "not yours"
 (docs/05-api-contracts.md#conventions).
-
-`require_conversation` is not implemented here yet: Conversation items don't exist until Phase
-5 writes them, and an authz check with nothing behind it is untested dead code. Add it
-alongside `services/answering`'s first conversation-scoped route.
 """
 
 from __future__ import annotations
 
-from common.models import Document, Project
+from common.models import Conversation, Document, Project
 from common.repo import NotFound, Repo
 
-__all__ = ["NotFound", "require_document", "require_project"]
+__all__ = ["NotFound", "require_conversation", "require_document", "require_project"]
 
 
 def require_project(repo: Repo, owner_sub: str, project_id: str) -> Project:
@@ -34,3 +30,14 @@ def require_document(repo: Repo, owner_sub: str, project_id: str, document_id: s
     if document is None or document.project_id != project_id or document.owner_sub != owner_sub:
         raise NotFound(document_id)
     return document
+
+
+def require_conversation(repo: Repo, owner_sub: str, conversation_id: str) -> Conversation:
+    """Unlike `require_document`, there is no project id in the path to chain-verify against
+    (docs/05-api-contracts.md's conversation/message routes are addressed by `conversationId`
+    alone, never nested under `/projects/{projectId}/conversations/{conversationId}`) — `sub`
+    denormalised onto the canonical item is the whole check."""
+    conversation = repo.get_conversation(conversation_id)
+    if conversation is None or conversation.owner_sub != owner_sub:
+        raise NotFound(conversation_id)
+    return conversation

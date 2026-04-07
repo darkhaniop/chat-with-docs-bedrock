@@ -56,3 +56,63 @@ export interface Page<T> {
 export interface ApiErrorBody {
   error: { code: string; message: string; details?: Record<string, unknown> };
 }
+
+export interface Conversation {
+  conversationId: string;
+  projectId: string;
+  title: string;
+  pinnedDocumentIds: string[];
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type Rect = [number, number, number, number];
+
+export interface Citation {
+  citationId: string;
+  documentId: string;
+  pageNumber: number;
+  chunkId: string;
+  startSentence: number;
+  endSentence: number;
+  citedText: string;
+  rects: Rect[];
+  spanStart: number;
+  spanEnd: number;
+  suspect: boolean;
+}
+
+export interface RetrievedRef {
+  chunkId: string | null;
+  documentId: string;
+  pageNumber: number;
+  score: number | null;
+  kind: "text" | "page";
+}
+
+export interface Usage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+}
+
+export type MessageRole = "user" | "assistant";
+export type MessageStatus = "COMPLETE" | "STREAMING" | "FAILED" | "BLOCKED";
+
+export interface Message {
+  messageId: string;
+  role: MessageRole;
+  status: MessageStatus;
+  text: string;
+  rewrittenQuery?: string | null;
+  retrieved?: RetrievedRef[];
+  citations?: Citation[];
+  usage?: Usage | null;
+  createdAt: string;
+}
+
+export interface PostMessageResponse {
+  userMessage: Message;
+  assistantMessage: Message;
+}

@@ -15,16 +15,23 @@ from common.models import DocumentKind
 
 __all__ = [
     "extension_for_content_type",
+    "validate_create_conversation",
     "validate_create_document",
     "validate_create_project",
     "validate_page_number",
     "validate_pagination",
+    "validate_patch_conversation",
     "validate_patch_project",
+    "validate_post_message",
 ]
 
 _MAX_NAME_LENGTH = 200
 _MAX_DESCRIPTION_LENGTH = 2000
 _MAX_FILENAME_LENGTH = 255
+_MAX_TITLE_LENGTH = 200
+_MAX_PINNED_DOCUMENTS = 100
+_MIN_MESSAGE_TEXT_LENGTH = 1
+_MAX_MESSAGE_TEXT_LENGTH = 8000
 _DEFAULT_PAGE_LIMIT = 20
 _MAX_PAGE_LIMIT = 100
 
@@ -101,6 +108,47 @@ def validate_create_document(
         )
     kind = ACCEPTED_CONTENT_TYPES[content_type][0]
     return filename, content_type, byte_size, kind
+
+
+def _optional_pinned_document_ids(body: dict[str, Any], field: str) -> list[str] | None:
+    if field not in body or body[field] is None:
+        return None
+    value = body[field]
+    if not isinstance(value, list) or not all(isinstance(v, str) and v for v in value):
+        raise bad_request(
+            "VALIDATION_ERROR", f"`{field}` must be a list of non-empty strings.", field=field
+        )
+    if len(value) > _MAX_PINNED_DOCUMENTS:
+        raise bad_request(
+            "VALIDATION_ERROR", f"`{field}` exceeds {_MAX_PINNED_DOCUMENTS} entries.", field=field
+        )
+    return list(value)
+
+
+def validate_create_conversation(body: dict[str, Any]) -> tuple[str, list[str]]:
+    title = _optional_str(body, "title", max_length=_MAX_TITLE_LENGTH) or ""
+    pinned_document_ids = _optional_pinned_document_ids(body, "pinnedDocumentIds") or []
+    return title, pinned_document_ids
+
+
+def validate_patch_conversation(body: dict[str, Any]) -> tuple[str | None, list[str] | None]:
+    title = _optional_str(body, "title", max_length=_MAX_TITLE_LENGTH)
+    pinned_document_ids = _optional_pinned_document_ids(body, "pinnedDocumentIds")
+    return title, pinned_document_ids
+
+
+def validate_post_message(body: dict[str, Any]) -> str:
+    """docs/05-api-contracts.md: "Validates the text (1-8000 characters)."."""
+    value = body.get("text")
+    if not isinstance(value, str) or len(value) < _MIN_MESSAGE_TEXT_LENGTH:
+        raise bad_request("VALIDATION_ERROR", "`text` is required.", field="text")
+    if len(value) > _MAX_MESSAGE_TEXT_LENGTH:
+        raise bad_request(
+            "VALIDATION_ERROR",
+            f"`text` exceeds {_MAX_MESSAGE_TEXT_LENGTH} characters.",
+            field="text",
+        )
+    return value
 
 
 def validate_pagination(query: dict[str, str] | None) -> tuple[int, str | None]:

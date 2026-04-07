@@ -1,8 +1,7 @@
 """Pydantic item shapes for the DynamoDB single table (docs/02-data-model.md).
 
-Project, Document, Page, and Chunk are modelled here (Phase 3 adds Page/Chunk). Conversation and
-Message get their models in Phase 5, the first phase that writes those items — modelling an item
-shape nothing produces yet is untested dead code.
+Project, Document, Page, and Chunk were modelled starting Phase 3. Conversation and Message are
+added in Phase 5, the first phase that writes those items.
 
 Field names are snake_case in Python, camelCase on the wire (DynamoDB attributes and API JSON
 both use camelCase per docs/02-data-model.md and docs/05-api-contracts.md).
@@ -143,3 +142,103 @@ class Chunk(_CamelModel):
     sentences: list[Sentence]
     token_estimate: int
     created_at: str
+
+
+MessageRole = Literal["user", "assistant"]
+MessageStatus = Literal["COMPLETE", "STREAMING", "FAILED", "BLOCKED"]
+RetrievedKind = Literal["text", "page"]
+
+
+class Conversation(_CamelModel):
+    """`CONV#{id} / META` canonical item, mirrored (docs/02-data-model.md#conversation) at
+    `PROJECT#{p} / CONV#{c}` for the list route — same full-mirror convention `Document` uses,
+    since no reduced `ConversationSummary` is documented. `active_message_id`/`lock_expires_at`
+    are the conversation lock (docs/02-data-model.md's "write patterns worth calling out": "set
+    `activeMessageId` only if it is null or `lockExpiresAt < now`") and are excluded from
+    `to_api()` — a client never needs to read the lock directly, only the 409 it produces."""
+
+    conversation_id: str
+    project_id: str
+    owner_sub: str
+    title: str = ""
+    pinned_document_ids: list[str] = Field(default_factory=list)
+    active_message_id: str | None = None
+    lock_expires_at: int = 0
+    message_count: int = 0
+    created_at: str
+    updated_at: str
+
+    def to_api(self) -> dict[str, object]:
+        return self.model_dump(
+            by_alias=True, exclude={"owner_sub", "active_message_id", "lock_expires_at"}
+        )
+
+
+class RetrievedRef(_CamelModel):
+    """One entry of `Message.retrieved` — docs/02-data-model.md#message: every hit
+    `query_vectors` returned, pre-fusion (mirrors `answering.retrieve.RetrievedHit`, denormalised
+    onto the persisted message so a historical turn is self-contained)."""
+
+    chunk_id: str | None = None
+    document_id: str
+    page_number: int
+    score: float | None = None
+    kind: RetrievedKind
+
+
+class CitationRecord(_CamelModel):
+    """One entry of `Message.citations` — docs/04-retrieval-and-citations.md#8-citation-mapping.
+    `suspect` is the canary described in that section's defensive rules: a citation whose
+    `cited_text` shares no 8-character substring with the sentences it claims to cite is kept
+    (never dropped) but flagged, so the eval harness can compute a suspect rate."""
+
+    citation_id: str
+    document_id: str
+    page_number: int
+    chunk_id: str
+    start_sentence: int
+    end_sentence: int
+    cited_text: str
+    rects: list[Rect]
+    span_start: int
+    span_end: int
+    suspect: bool = False
+
+
+class Usage(_CamelModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+
+class LatencyMs(_CamelModel):
+    rewrite: int | None = None
+    embed: int | None = None
+    retrieve: int | None = None
+    first_token: int | None = None
+    total: int = 0
+
+
+class Message(_CamelModel):
+    """`CONV#{c} / MSG#{ulid}` item — docs/02-data-model.md#message. `messageId` is the ULID
+    itself (sorts chronologically), so no separate sort key field is needed beyond `sk`.
+    User messages leave every assistant-only field at its default."""
+
+    message_id: str
+    conversation_id: str
+    project_id: str
+    owner_sub: str
+    role: MessageRole
+    status: MessageStatus
+    text: str
+    rewritten_query: str | None = None
+    retrieved: list[RetrievedRef] = Field(default_factory=list)
+    citations: list[CitationRecord] = Field(default_factory=list)
+    usage: Usage | None = None
+    latency_ms: LatencyMs | None = None
+    created_at: str
+
+    def to_api(self) -> dict[str, object]:
+        return self.model_dump(
+            by_alias=True, exclude={"owner_sub", "project_id", "conversation_id"}
+        )

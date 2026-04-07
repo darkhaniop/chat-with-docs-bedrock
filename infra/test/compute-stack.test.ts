@@ -50,12 +50,12 @@ describe("CwdComputeStack", () => {
     });
   });
 
-  it("routes every documented project/document route through the JWT authorizer", () => {
+  it("routes every documented project/document/conversation/message route through the JWT authorizer", () => {
     const routes = template.findResources("AWS::ApiGatewayV2::Route");
     const nonHealthRoutes = Object.values(routes).filter(
       (r) => r.Properties.RouteKey !== "GET /health",
     );
-    expect(nonHealthRoutes).toHaveLength(12);
+    expect(nonHealthRoutes).toHaveLength(20);
     for (const route of nonHealthRoutes) {
       expect(route.Properties.AuthorizationType).toBe("JWT");
       expect(route.Properties.AuthorizerId).toBeDefined();
@@ -75,6 +75,14 @@ describe("CwdComputeStack", () => {
         "POST /projects",
         "POST /projects/{projectId}/documents",
         "POST /projects/{projectId}/documents/{documentId}/ingest",
+        "POST /projects/{projectId}/conversations",
+        "GET /projects/{projectId}/conversations",
+        "GET /conversations/{conversationId}",
+        "PATCH /conversations/{conversationId}",
+        "DELETE /conversations/{conversationId}",
+        "GET /conversations/{conversationId}/messages",
+        "POST /conversations/{conversationId}/messages",
+        "POST /conversations/{conversationId}/messages/{messageId}/cancel",
       ].sort(),
     );
   });
@@ -89,12 +97,12 @@ describe("CwdComputeStack", () => {
     });
   });
 
-  it("gives every Lambda function (api, sweeper, and the seven ingestion functions) its own distinct role", () => {
+  it("gives every Lambda function (api, sweeper, answering, and the seven ingestion functions) its own distinct role", () => {
     const roles = template.findResources("AWS::IAM::Role");
-    expect(Object.keys(roles)).toHaveLength(10);
+    expect(Object.keys(roles)).toHaveLength(11);
   });
 
-  it("only ingest-embed-and-index has Bedrock permission, and only on the Nova model ARN, never wildcarded", () => {
+  it("only ingest-embed-and-index and answering have Bedrock permission, never wildcarded", () => {
     const policies = template.findResources("AWS::IAM::Policy");
     for (const [name, policy] of Object.entries(policies)) {
       const statements = policy.Properties.PolicyDocument.Statement as Array<
@@ -104,16 +112,64 @@ describe("CwdComputeStack", () => {
         JSON.stringify(s.Action ?? "").includes("bedrock:"),
       );
       if (bedrockStatements.length === 0) continue;
-      expect(name).toContain("ingestembedandindex");
+      expect(name).toMatch(/ingestembedandindex|AnsweringFunction/);
       for (const statement of bedrockStatements) {
-        expect(statement.Action).toBe("bedrock:InvokeModel");
         const resources = ([] as unknown[]).concat(statement.Resource ?? []);
         expect(resources).not.toContain("*");
-        expect(JSON.stringify(resources)).toContain(
-          "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
-        );
+        const actions = ([] as unknown[]).concat(statement.Action ?? []);
+        if (name.startsWith("AnsweringFunction")) {
+          expect(actions.sort()).toEqual(
+            ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"].sort(),
+          );
+          const joined = JSON.stringify(resources);
+          expect(joined).toContain("inference-profile/us.anthropic.claude-sonnet-4-6");
+          expect(joined).toContain(
+            "inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+          );
+          expect(joined).toContain("foundation-model/anthropic.claude-sonnet-4-6");
+        } else {
+          expect(statement.Action).toBe("bedrock:InvokeModel");
+          expect(JSON.stringify(resources)).toContain(
+            "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
+          );
+        }
       }
     }
+  });
+
+  it("grants the api function lambda:InvokeFunction scoped to the answering function only", () => {
+    const apiPolicy = template.findResources("AWS::IAM::Policy", {
+      Properties: { PolicyName: Match.stringLikeRegexp("^ApiFunctionServiceRoleDefaultPolicy") },
+    });
+    const statements = Object.values(apiPolicy).flatMap(
+      (p) => p.Properties.PolicyDocument.Statement as Array<Record<string, unknown>>,
+    );
+    const invokeStatements = statements.filter((s) =>
+      JSON.stringify(s.Action ?? "").includes("lambda:InvokeFunction"),
+    );
+    expect(invokeStatements).toHaveLength(1);
+    const resources = JSON.stringify(invokeStatements[0]?.Resource);
+    expect(resources).not.toBe('"*"');
+    expect(resources).toContain("AnsweringFunction");
+  });
+
+  it("scopes the answering function's s3vectors grant to QueryVectors only, never wildcarded", () => {
+    const policies = template.findResources("AWS::IAM::Policy", {
+      Properties: {
+        PolicyName: Match.stringLikeRegexp("^AnsweringFunctionServiceRoleDefaultPolicy"),
+      },
+    });
+    const statements = Object.values(policies).flatMap(
+      (p) => p.Properties.PolicyDocument.Statement as Array<Record<string, unknown>>,
+    );
+    const s3vectorsStatements = statements.filter((s) =>
+      JSON.stringify(s.Action ?? "").includes("s3vectors:"),
+    );
+    expect(s3vectorsStatements).toHaveLength(1);
+    expect(s3vectorsStatements[0]?.Action).toBe("s3vectors:QueryVectors");
+    const resources = JSON.stringify(s3vectorsStatements[0]?.Resource);
+    expect(resources).not.toBe('"*"');
+    expect(resources).toContain("VectorBucket");
   });
 
   it("scopes every s3vectors grant to the vector bucket, never wildcarded, and api never gets more than delete", () => {
@@ -204,19 +260,19 @@ describe("CwdComputeStack", () => {
     }
   });
 
-  it("builds exactly two images from services/Dockerfile (SERVICE=api, SERVICE=ingestion), x86_64 only", () => {
+  it("builds exactly three images from services/Dockerfile (SERVICE=api, SERVICE=ingestion, SERVICE=answering), x86_64 only", () => {
     const assets = JSON.parse(
       fs.readFileSync(path.join(outdir, "TestComputeStack.assets.json"), "utf8"),
     ) as { dockerImages: Record<string, { source: Record<string, unknown> }> };
     const images = Object.values(assets.dockerImages);
-    expect(images.length).toBe(2);
+    expect(images.length).toBe(3);
     const services = images
       .map(
         (image) =>
           (image.source as { dockerBuildArgs: { SERVICE: string } }).dockerBuildArgs.SERVICE,
       )
       .sort();
-    expect(services).toEqual(["api", "ingestion"]);
+    expect(services).toEqual(["answering", "api", "ingestion"]);
     for (const image of images) {
       expect(image.source).toMatchObject({
         dockerFile: "services/Dockerfile",

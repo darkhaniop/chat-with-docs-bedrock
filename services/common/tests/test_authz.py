@@ -75,3 +75,29 @@ def test_require_document_404s_for_a_different_owner(repo: Repo) -> None:
 
     with pytest.raises(NotFound):
         authz.require_document(repo, "user-2", project.project_id, document.document_id)
+
+
+def test_require_conversation_returns_the_conversation_for_its_owner(repo: Repo) -> None:
+    project = repo.create_project(owner_sub="user-1", name="p", description="")
+    conversation = repo.create_conversation(
+        project_id=project.project_id, owner_sub="user-1", title="", pinned_document_ids=[]
+    )
+
+    found = authz.require_conversation(repo, "user-1", conversation.conversation_id)
+
+    assert found.conversation_id == conversation.conversation_id
+
+
+def test_require_conversation_404s_for_a_different_owner(repo: Repo) -> None:
+    project = repo.create_project(owner_sub="user-1", name="p", description="")
+    conversation = repo.create_conversation(
+        project_id=project.project_id, owner_sub="user-1", title="", pinned_document_ids=[]
+    )
+
+    with pytest.raises(NotFound):
+        authz.require_conversation(repo, "user-2", conversation.conversation_id)
+
+
+def test_require_conversation_404s_for_a_missing_conversation(repo: Repo) -> None:
+    with pytest.raises(NotFound):
+        authz.require_conversation(repo, "user-1", "does-not-exist")

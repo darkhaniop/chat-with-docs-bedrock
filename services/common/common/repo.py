@@ -1,7 +1,5 @@
-"""DynamoDB access for Project, Document, Page, and Chunk (docs/02-data-model.md).
-
-Conversation and Message repo functions arrive in Phase 5, the phase that first writes those
-items — building CRUD for entities nothing produces yet is dead, untested code.
+"""DynamoDB access for Project, Document, Page, Chunk, Conversation, and Message
+(docs/02-data-model.md).
 
 Takes a low-level `dynamodb` boto3 client (not the higher-level resource) because
 `transact_write_items` — needed to keep a canonical item and its list-view copy consistent
@@ -21,7 +19,22 @@ from typing import Any
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from ulid import ULID
 
-from common.models import Chunk, Document, DocumentKind, Page, Project, ProjectSummary
+from common.models import (
+    Chunk,
+    CitationRecord,
+    Conversation,
+    Document,
+    DocumentKind,
+    LatencyMs,
+    Message,
+    MessageRole,
+    MessageStatus,
+    Page,
+    Project,
+    ProjectSummary,
+    RetrievedRef,
+    Usage,
+)
 
 _serializer = TypeSerializer()
 _deserializer = TypeDeserializer()
@@ -598,3 +611,293 @@ class Repo:
             while request_items:
                 response = self._client.batch_write_item(RequestItems=request_items)
                 request_items = response.get("UnprocessedItems") or {}
+
+    # -- Conversation (docs/02-data-model.md#conversation) ---------------------------------------
+
+    def _put_conversation(self, conversation: Conversation) -> None:
+        """Writes canonical + list-view copies together, always — the same convention
+        `_put_document` uses, so the two never diverge on the fields the list route actually
+        shows (`title`, `pinnedDocumentIds`, `messageCount`). `activeMessageId`/`lockExpiresAt`
+        ride along in this payload but are never read back from the list-view copy (`to_api()`
+        excludes them everywhere, and `claim_lock`/`release_lock` below only ever touch the
+        canonical item directly, the same "counter lives on canonical only" convention
+        `increment_chunk_count` already uses for `Project.chunkCount`)."""
+        item = conversation.model_dump(by_alias=True)
+        canonical = {
+            "pk": f"CONV#{conversation.conversation_id}",
+            "sk": "META",
+            "entity": "Conversation",
+            **item,
+        }
+        list_view = {
+            "pk": f"PROJECT#{conversation.project_id}",
+            "sk": f"CONV#{conversation.conversation_id}",
+            "entity": "Conversation",
+            **item,
+        }
+        self._client.transact_write_items(
+            TransactItems=[
+                {"Put": {"TableName": self._table, "Item": _ser(canonical)}},
+                {"Put": {"TableName": self._table, "Item": _ser(list_view)}},
+            ]
+        )
+
+    def create_conversation(
+        self, *, project_id: str, owner_sub: str, title: str, pinned_document_ids: list[str]
+    ) -> Conversation:
+        now = now_iso()
+        conversation = Conversation(
+            conversation_id=new_id(),
+            project_id=project_id,
+            owner_sub=owner_sub,
+            title=title,
+            pinned_document_ids=pinned_document_ids,
+            created_at=now,
+            updated_at=now,
+        )
+        self._put_conversation(conversation)
+        return conversation
+
+    def get_conversation(self, conversation_id: str) -> Conversation | None:
+        response = self._client.get_item(
+            TableName=self._table,
+            Key=_ser({"pk": f"CONV#{conversation_id}", "sk": "META"}),
+        )
+        item = response.get("Item")
+        return None if item is None else Conversation.model_validate(_deser(item))
+
+    def list_conversations(
+        self, project_id: str, *, limit: int, cursor: str | None
+    ) -> tuple[list[Conversation], str | None]:
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "pk = :pk AND begins_with(sk, :prefix)",
+            "ExpressionAttributeValues": _ser({":pk": f"PROJECT#{project_id}", ":prefix": "CONV#"}),
+            "Limit": limit,
+        }
+        if cursor is not None:
+            kwargs["ExclusiveStartKey"] = _ser(decode_cursor(cursor))
+        response = self._client.query(**kwargs)
+        items = [Conversation.model_validate(_deser(i)) for i in response.get("Items", [])]
+        last_key = response.get("LastEvaluatedKey")
+        next_cursor = encode_cursor(_deser(last_key)) if last_key else None
+        return items, next_cursor
+
+    def update_conversation(
+        self,
+        conversation_id: str,
+        *,
+        title: str | None = None,
+        pinned_document_ids: list[str] | None = None,
+    ) -> Conversation:
+        conversation = self.get_conversation(conversation_id)
+        if conversation is None:
+            raise NotFound(conversation_id)
+        updated = conversation.model_copy(
+            update={
+                "title": title if title is not None else conversation.title,
+                "pinned_document_ids": (
+                    pinned_document_ids
+                    if pinned_document_ids is not None
+                    else conversation.pinned_document_ids
+                ),
+                "updated_at": now_iso(),
+            }
+        )
+        self._put_conversation(updated)
+        return updated
+
+    def increment_message_count(self, conversation_id: str, project_id: str, *, by: int) -> None:
+        now = now_iso()
+        self._client.transact_write_items(
+            TransactItems=[
+                {
+                    "Update": {
+                        "TableName": self._table,
+                        "Key": _ser({"pk": f"CONV#{conversation_id}", "sk": "META"}),
+                        "UpdateExpression": (
+                            "SET messageCount = messageCount + :by, updatedAt = :now"
+                        ),
+                        "ExpressionAttributeValues": _ser({":by": by, ":now": now}),
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": self._table,
+                        "Key": _ser(
+                            {"pk": f"PROJECT#{project_id}", "sk": f"CONV#{conversation_id}"}
+                        ),
+                        "UpdateExpression": (
+                            "SET messageCount = messageCount + :by, updatedAt = :now"
+                        ),
+                        "ExpressionAttributeValues": _ser({":by": by, ":now": now}),
+                    }
+                },
+            ]
+        )
+
+    def claim_lock(self, conversation_id: str, message_id: str, *, ttl_seconds: int) -> bool:
+        """Conditional update: docs/02-data-model.md's conversation lock — "set `activeMessageId`
+        only if it is null or `lockExpiresAt < now`." `attribute_type(activeMessageId, "NULL")`
+        is DynamoDB's documented way to test an attribute's *type* rather than compare its value,
+        which is what "is the lock free" means for a field whose free-state value is `null`.
+        Returns `False` (never raises) on a lost race — a second concurrent post losing the race
+        is the expected, common 409 case, not an error condition the caller should treat as one."""
+        now = int(datetime.now(UTC).timestamp())
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=_ser({"pk": f"CONV#{conversation_id}", "sk": "META"}),
+                UpdateExpression=(
+                    "SET activeMessageId = :mid, lockExpiresAt = :exp, updatedAt = :now"
+                ),
+                ConditionExpression=(
+                    "attribute_type(activeMessageId, :nullType) OR lockExpiresAt < :nowNum"
+                ),
+                ExpressionAttributeValues=_ser(
+                    {
+                        ":mid": message_id,
+                        ":exp": now + ttl_seconds,
+                        ":now": now_iso(),
+                        ":nullType": "NULL",
+                        ":nowNum": now,
+                    }
+                ),
+            )
+            return True
+        except self._client.exceptions.ConditionalCheckFailedException:
+            return False
+
+    def release_lock(self, conversation_id: str) -> None:
+        self._client.update_item(
+            TableName=self._table,
+            Key=_ser({"pk": f"CONV#{conversation_id}", "sk": "META"}),
+            UpdateExpression="SET activeMessageId = :null, lockExpiresAt = :zero, updatedAt = :now",
+            ExpressionAttributeValues=_ser({":null": None, ":zero": 0, ":now": now_iso()}),
+        )
+
+    def delete_conversation(self, conversation: Conversation) -> None:
+        self._client.transact_write_items(
+            TransactItems=[
+                {
+                    "Delete": {
+                        "TableName": self._table,
+                        "Key": _ser({"pk": f"CONV#{conversation.conversation_id}", "sk": "META"}),
+                    }
+                },
+                {
+                    "Delete": {
+                        "TableName": self._table,
+                        "Key": _ser(
+                            {
+                                "pk": f"PROJECT#{conversation.project_id}",
+                                "sk": f"CONV#{conversation.conversation_id}",
+                            }
+                        ),
+                    }
+                },
+            ]
+        )
+
+    def delete_messages(self, conversation_id: str) -> None:
+        """Query-and-batch-delete every `MSG#` item under a conversation — the same shape as
+        `delete_pages_and_chunks`, for one prefix instead of two, called when a conversation
+        itself is deleted (not part of any Phase 5 task list item verbatim, but the same
+        "cascade path drifted from the single-entity path" gap Phase 4 found and fixed for
+        project deletion; doing it here from the start avoids reintroducing that gap)."""
+        keys_to_delete: list[dict[str, Any]] = []
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "pk = :pk AND begins_with(sk, :prefix)",
+            "ExpressionAttributeValues": _ser(
+                {":pk": f"CONV#{conversation_id}", ":prefix": "MSG#"}
+            ),
+            "ProjectionExpression": "pk, sk",
+        }
+        while True:
+            response = self._client.query(**kwargs)
+            keys_to_delete.extend(_deser(i) for i in response.get("Items", []))
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            kwargs["ExclusiveStartKey"] = last_key
+
+        for start in range(0, len(keys_to_delete), 25):
+            batch = keys_to_delete[start : start + 25]
+            request_items = {self._table: [{"DeleteRequest": {"Key": _ser(key)}} for key in batch]}
+            while request_items:
+                response = self._client.batch_write_item(RequestItems=request_items)
+                request_items = response.get("UnprocessedItems") or {}
+
+    # -- Message (docs/02-data-model.md#message) --------------------------------------------------
+
+    def create_message(
+        self,
+        *,
+        message_id: str | None = None,
+        conversation_id: str,
+        project_id: str,
+        owner_sub: str,
+        role: MessageRole,
+        status: MessageStatus,
+        text: str,
+        rewritten_query: str | None = None,
+        retrieved: list[RetrievedRef] | None = None,
+        citations: list[CitationRecord] | None = None,
+        usage: Usage | None = None,
+        latency_ms: LatencyMs | None = None,
+    ) -> Message:
+        """`message_id` is a parameter, not always freshly generated, because the assistant
+        message's id is chosen up front and used as the conversation lock's value
+        (`claim_lock`) before the message's content is known — the item itself is written only
+        once the answer turn has actually finished (or failed/been blocked)."""
+        message = Message(
+            message_id=message_id or new_id(),
+            conversation_id=conversation_id,
+            project_id=project_id,
+            owner_sub=owner_sub,
+            role=role,
+            status=status,
+            text=text,
+            rewritten_query=rewritten_query,
+            retrieved=retrieved or [],
+            citations=citations or [],
+            usage=usage,
+            latency_ms=latency_ms,
+            created_at=now_iso(),
+        )
+        item = {
+            "pk": f"CONV#{message.conversation_id}",
+            "sk": f"MSG#{message.message_id}",
+            "entity": "Message",
+            **message.model_dump(by_alias=True),
+        }
+        self._client.put_item(TableName=self._table, Item=_ser(item))
+        return message
+
+    def get_message(self, conversation_id: str, message_id: str) -> Message | None:
+        response = self._client.get_item(
+            TableName=self._table,
+            Key=_ser({"pk": f"CONV#{conversation_id}", "sk": f"MSG#{message_id}"}),
+        )
+        item = response.get("Item")
+        return None if item is None else Message.model_validate(_deser(item))
+
+    def list_messages(
+        self, conversation_id: str, *, limit: int, cursor: str | None
+    ) -> tuple[list[Message], str | None]:
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "pk = :pk AND begins_with(sk, :prefix)",
+            "ExpressionAttributeValues": _ser(
+                {":pk": f"CONV#{conversation_id}", ":prefix": "MSG#"}
+            ),
+            "Limit": limit,
+        }
+        if cursor is not None:
+            kwargs["ExclusiveStartKey"] = _ser(decode_cursor(cursor))
+        response = self._client.query(**kwargs)
+        items = [Message.model_validate(_deser(i)) for i in response.get("Items", [])]
+        last_key = response.get("LastEvaluatedKey")
+        next_cursor = encode_cursor(_deser(last_key)) if last_key else None
+        return items, next_cursor

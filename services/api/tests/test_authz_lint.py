@@ -1,8 +1,9 @@
 """docs/07-security.md#authorization: "There is a lint test that fails if a route handler
 reads a path parameter named `*Id` without a preceding `require_*` call." The business logic
-for every route lives in `api.projects`/`api.documents` (docs/05-api-contracts.md), so this
-walks those two modules' ASTs: any function taking a `project_id`/`document_id` parameter must
-call `authz.require_project` or `authz.require_document` somewhere in its body.
+for every route lives in `api.projects`/`api.documents`/`api.conversations`
+(docs/05-api-contracts.md), so this walks those three modules' ASTs: any function taking a
+`project_id`/`document_id`/`conversation_id` parameter must call `authz.require_project`,
+`authz.require_document`, or `authz.require_conversation` somewhere in its body.
 """
 
 from __future__ import annotations
@@ -10,10 +11,10 @@ from __future__ import annotations
 import ast
 import inspect
 
-from api import documents, projects
+from api import conversations, documents, projects
 
-_ID_PARAMS = {"project_id", "document_id"}
-_REQUIRE_CALLS = {"require_project", "require_document"}
+_ID_PARAMS = {"project_id", "document_id", "conversation_id"}
+_REQUIRE_CALLS = {"require_project", "require_document", "require_conversation"}
 
 
 def _calls_a_require_function(node: ast.FunctionDef) -> bool:
@@ -40,7 +41,12 @@ def _functions_missing_authz(module: object) -> list[str]:
 
 
 def test_every_project_or_document_scoped_function_calls_a_require_helper() -> None:
-    offenders = _functions_missing_authz(projects) + _functions_missing_authz(documents)
+    offenders = (
+        _functions_missing_authz(projects)
+        + _functions_missing_authz(documents)
+        + _functions_missing_authz(conversations)
+    )
     assert offenders == [], (
-        f"functions reading project_id/document_id without a require_* call: {offenders}"
+        f"functions reading project_id/document_id/conversation_id without a require_* call:"
+        f" {offenders}"
     )

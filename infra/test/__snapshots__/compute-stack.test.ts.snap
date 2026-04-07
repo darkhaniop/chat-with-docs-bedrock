@@ -20,6 +20,206 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
     },
   },
   "Resources": {
+    "AnsweringFunctionF7117222": {
+      "DependsOn": [
+        "AnsweringFunctionServiceRoleDefaultPolicy4B4673A3",
+        "AnsweringFunctionServiceRoleE32AE9D7",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:396758e073ef5ce7c7b84bd596e80fe93b36be15faf33a5d0c99d22f574ecbc5",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_COMMIT": "<commit-sha>",
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
+            "CWD_VERSION": "0.1.0",
+          },
+        },
+        "FunctionName": "cwd-dev-answering",
+        "ImageConfig": {
+          "Command": [
+            "answering.handler.lambda_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "AnsweringLogGroup8F61C13F",
+          },
+        },
+        "MemorySize": 2048,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "AnsweringFunctionServiceRoleE32AE9D7",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "AnsweringFunctionServiceRoleDefaultPolicy4B4673A3": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "dynamodb:TransactWriteItems",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttDocumentsBucket9EC9DEB9ArnEA5095A7",
+                      },
+                      "/pages/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "s3vectors:QueryVectors",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttVectorBucketVectorBucketArnAA1E2656",
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttVectorBucketVectorBucketArnAA1E2656",
+                      },
+                      "/index/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": [
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6",
+                "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6",
+                "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6",
+                "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6",
+                "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+                "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "AnsweringFunctionServiceRoleDefaultPolicy4B4673A3",
+        "Roles": [
+          {
+            "Ref": "AnsweringFunctionServiceRoleE32AE9D7",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "AnsweringFunctionServiceRoleE32AE9D7": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "AnsweringLogGroup8F61C13F": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-answering",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
     "ApiFunctionCE271BD4": {
       "DependsOn": [
         "ApiFunctionServiceRoleDefaultPolicy20A32B8D",
@@ -31,11 +231,14 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:878a59610bdf7b273395e76f3e44cbfadb400e76208fd1fc523fe57c9742c261",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:ea054c6c1b7ecd968526f2674bdb1fa5235818d4e304d519d8d1a40c969b19e8",
           },
         },
         "Environment": {
           "Variables": {
+            "CWD_ANSWERING_FUNCTION_NAME": {
+              "Ref": "AnsweringFunctionF7117222",
+            },
             "CWD_COMMIT": "<commit-sha>",
             "CWD_DOCUMENTS_BUCKET_NAME": {
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
@@ -67,7 +270,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
             "Arn",
           ],
         },
-        "Timeout": 10,
+        "Timeout": 29,
       },
       "Type": "AWS::Lambda::Function",
     },
@@ -263,6 +466,32 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
                 "Ref": "IngestionPipelineStateMachineAA924511",
               },
             },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "AnsweringFunctionF7117222",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "AnsweringFunctionF7117222",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -317,6 +546,59 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         "DashboardName": "cwd-dev",
       },
       "Type": "AWS::CloudWatch::Dashboard",
+    },
+    "HttpApiDELETEconversationsconversationId2C9EBE2C": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "DELETE /conversations/{conversationId}",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
+    "HttpApiDELETEconversationsconversationIdApiIntegrationPermission7BAC4CA8": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/conversations/{conversationId}",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
     },
     "HttpApiDELETEprojectsprojectId81CC9700": {
       "Properties": {
@@ -456,6 +738,112 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         "ProtocolType": "HTTP",
       },
       "Type": "AWS::ApiGatewayV2::Api",
+    },
+    "HttpApiGETconversationsconversationId8875EF15": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "GET /conversations/{conversationId}",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
+    "HttpApiGETconversationsconversationIdApiIntegrationPermissionAEE116A7": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/conversations/{conversationId}",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "HttpApiGETconversationsconversationIdmessages4D471C65": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "GET /conversations/{conversationId}/messages",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
+    "HttpApiGETconversationsconversationIdmessagesApiIntegrationPermission7FB6D25B": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/conversations/{conversationId}/messages",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
     },
     "HttpApiGEThealthAB1F4856": {
       "Properties": {
@@ -615,6 +1003,59 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
           "Ref": "HttpApiJwtAuthorizer14F16BDB",
         },
         "RouteKey": "GET /projects/{projectId}",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
+    "HttpApiGETprojectsprojectIdconversationsApiIntegrationPermissionE3729CDD": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/projects/{projectId}/conversations",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "HttpApiGETprojectsprojectIdconversationsC2109A48": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "GET /projects/{projectId}/conversations",
         "Target": {
           "Fn::Join": [
             "",
@@ -860,6 +1301,59 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
       },
       "Type": "AWS::ApiGatewayV2::Authorizer",
     },
+    "HttpApiPATCHconversationsconversationIdApiIntegrationPermission3407125E": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/conversations/{conversationId}",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "HttpApiPATCHconversationsconversationIdF2023DFA": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "PATCH /conversations/{conversationId}",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
     "HttpApiPATCHprojectsprojectIdApiIntegrationPermission3961DD74": {
       "Properties": {
         "Action": "lambda:InvokeFunction",
@@ -913,6 +1407,112 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
       },
       "Type": "AWS::ApiGatewayV2::Route",
     },
+    "HttpApiPOSTconversationsconversationIdmessages1DCAC513": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "POST /conversations/{conversationId}/messages",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
+    "HttpApiPOSTconversationsconversationIdmessagesApiIntegrationPermission27C61679": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/conversations/{conversationId}/messages",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "HttpApiPOSTconversationsconversationIdmessagesmessageIdcancel284B5D6B": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "POST /conversations/{conversationId}/messages/{messageId}/cancel",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
+    "HttpApiPOSTconversationsconversationIdmessagesmessageIdcancelApiIntegrationPermission115F2ADD": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/conversations/{conversationId}/messages/{messageId}/cancel",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
     "HttpApiPOSTprojects54952579": {
       "Properties": {
         "ApiId": {
@@ -960,6 +1560,59 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
                 "Ref": "HttpApiF5A9A8A7",
               },
               "/*/*/projects",
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "HttpApiPOSTprojectsprojectIdconversations8827B341": {
+      "Properties": {
+        "ApiId": {
+          "Ref": "HttpApiF5A9A8A7",
+        },
+        "AuthorizationType": "JWT",
+        "AuthorizerId": {
+          "Ref": "HttpApiJwtAuthorizer14F16BDB",
+        },
+        "RouteKey": "POST /projects/{projectId}/conversations",
+        "Target": {
+          "Fn::Join": [
+            "",
+            [
+              "integrations/",
+              {
+                "Ref": "HttpApiGEThealthApiIntegration8B197B8C",
+              },
+            ],
+          ],
+        },
+      },
+      "Type": "AWS::ApiGatewayV2::Route",
+    },
+    "HttpApiPOSTprojectsprojectIdconversationsApiIntegrationPermission6246B4F7": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "ApiFunctionCE271BD4",
+            "Arn",
+          ],
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Join": [
+            "",
+            [
+              "arn:",
+              {
+                "Ref": "AWS::Partition",
+              },
+              ":execute-api:us-east-1:123456789012:",
+              {
+                "Ref": "HttpApiF5A9A8A7",
+              },
+              "/*/*/projects/{projectId}/conversations",
             ],
           ],
         },
@@ -1479,7 +2132,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bee1b98167269b28750196a545032ec20aee57f913ed11459aa75170a9c0a888",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:d23a904fb7959083ca5a2cb2ae31b3700dee2ea5b443c5286ea365ed30812fab",
           },
         },
         "Environment": {
@@ -1668,7 +2321,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bee1b98167269b28750196a545032ec20aee57f913ed11459aa75170a9c0a888",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:d23a904fb7959083ca5a2cb2ae31b3700dee2ea5b443c5286ea365ed30812fab",
           },
         },
         "Environment": {
@@ -1854,7 +2507,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bee1b98167269b28750196a545032ec20aee57f913ed11459aa75170a9c0a888",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:d23a904fb7959083ca5a2cb2ae31b3700dee2ea5b443c5286ea365ed30812fab",
           },
         },
         "Environment": {
@@ -2011,7 +2664,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bee1b98167269b28750196a545032ec20aee57f913ed11459aa75170a9c0a888",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:d23a904fb7959083ca5a2cb2ae31b3700dee2ea5b443c5286ea365ed30812fab",
           },
         },
         "Environment": {
@@ -2148,7 +2801,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bee1b98167269b28750196a545032ec20aee57f913ed11459aa75170a9c0a888",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:d23a904fb7959083ca5a2cb2ae31b3700dee2ea5b443c5286ea365ed30812fab",
           },
         },
         "Environment": {
@@ -2376,7 +3029,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bee1b98167269b28750196a545032ec20aee57f913ed11459aa75170a9c0a888",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:d23a904fb7959083ca5a2cb2ae31b3700dee2ea5b443c5286ea365ed30812fab",
           },
         },
         "Environment": {
@@ -2565,7 +3218,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:bee1b98167269b28750196a545032ec20aee57f913ed11459aa75170a9c0a888",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:d23a904fb7959083ca5a2cb2ae31b3700dee2ea5b443c5286ea365ed30812fab",
           },
         },
         "Environment": {
@@ -2702,7 +3355,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:878a59610bdf7b273395e76f3e44cbfadb400e76208fd1fc523fe57c9742c261",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:ea054c6c1b7ecd968526f2674bdb1fa5235818d4e304d519d8d1a40c969b19e8",
           },
         },
         "Environment": {

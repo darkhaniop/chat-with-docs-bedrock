@@ -11,7 +11,7 @@ from typing import Any
 from aws_lambda_powertools import Logger
 from aws_lambda_powertools.utilities.typing import LambdaContext
 
-from api import deps, documents, projects
+from api import conversations, deps, documents, projects
 from api.errors import ApiError, bad_request
 from api.validation import parse_body
 from common.repo import NotFound
@@ -150,6 +150,71 @@ def _dispatch(route_key: str, event: dict[str, Any]) -> dict[str, Any]:
             ),
         )
 
+    if route_key == "POST /projects/{projectId}/conversations":
+        owner_sub = _owner_sub(event)
+        project_id = _path(event, "projectId")
+        return _response(
+            201, conversations.create(deps.get_repo(), owner_sub, project_id, _body(event))
+        )
+
+    if route_key == "GET /projects/{projectId}/conversations":
+        owner_sub = _owner_sub(event)
+        project_id = _path(event, "projectId")
+        return _response(
+            200,
+            conversations.list_for_project(deps.get_repo(), owner_sub, project_id, _query(event)),
+        )
+
+    if route_key == "GET /conversations/{conversationId}":
+        owner_sub = _owner_sub(event)
+        conversation_id = _path(event, "conversationId")
+        return _response(200, conversations.get(deps.get_repo(), owner_sub, conversation_id))
+
+    if route_key == "PATCH /conversations/{conversationId}":
+        owner_sub = _owner_sub(event)
+        conversation_id = _path(event, "conversationId")
+        return _response(
+            200,
+            conversations.patch(deps.get_repo(), owner_sub, conversation_id, _body(event)),
+        )
+
+    if route_key == "DELETE /conversations/{conversationId}":
+        owner_sub = _owner_sub(event)
+        conversation_id = _path(event, "conversationId")
+        conversations.delete(deps.get_repo(), owner_sub, conversation_id)
+        return _response(204)
+
+    if route_key == "GET /conversations/{conversationId}/messages":
+        owner_sub = _owner_sub(event)
+        conversation_id = _path(event, "conversationId")
+        return _response(
+            200,
+            conversations.list_messages(deps.get_repo(), owner_sub, conversation_id, _query(event)),
+        )
+
+    if route_key == "POST /conversations/{conversationId}/messages":
+        owner_sub = _owner_sub(event)
+        conversation_id = _path(event, "conversationId")
+        return _response(
+            201,
+            conversations.post_message(
+                deps.get_repo(),
+                deps.get_answering_invoker(),
+                owner_sub,
+                conversation_id,
+                _body(event),
+            ),
+        )
+
+    if route_key == "POST /conversations/{conversationId}/messages/{messageId}/cancel":
+        owner_sub = _owner_sub(event)
+        conversation_id = _path(event, "conversationId")
+        message_id = _path(event, "messageId")
+        return _response(
+            202,
+            conversations.cancel_message(deps.get_repo(), owner_sub, conversation_id, message_id),
+        )
+
     logger.warning("no handler for route")
     not_found = ApiError(404, "NOT_FOUND", "No such route.")
     return _response(not_found.status_code, not_found.to_body())
@@ -193,5 +258,8 @@ def _health() -> dict[str, Any]:
     )
 
 
-def _response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
-    return {"statusCode": status_code, "headers": _JSON_HEADERS, "body": json.dumps(body)}
+def _response(status_code: int, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    response: dict[str, Any] = {"statusCode": status_code, "headers": _JSON_HEADERS}
+    if body is not None:
+        response["body"] = json.dumps(body)
+    return response

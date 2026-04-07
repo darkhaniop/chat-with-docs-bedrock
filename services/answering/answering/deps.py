@@ -1,6 +1,5 @@
 """Boto3 clients constructed once per Lambda execution environment, never inside a handler.
-`CWD_DOCUMENTS_BUCKET_NAME` is set by `CwdComputeStack` from the data stack's real bucket
-resource.
+Mirrors `services/api/api/deps.py`/`services/ingestion/ingestion/deps.py`'s pattern.
 """
 
 from __future__ import annotations
@@ -10,12 +9,13 @@ from functools import lru_cache
 
 import boto3
 
-from common.answering_client import AnsweringInvoker, AnsweringInvokerProtocol
+from common.bedrock.embeddings import NovaEmbeddings, NovaEmbeddingsProtocol
+from common.bedrock.guardrail import Guardrail
+from common.bedrock.messages import BedrockMessages
 from common.config import get_settings
 from common.repo import Repo
 from common.storage import DocumentsStore
 from common.vectors import VectorIndex, VectorIndexProtocol
-from common.workflow import Workflow
 
 
 @lru_cache(maxsize=1)
@@ -34,15 +34,9 @@ def get_store() -> DocumentsStore:
 
 
 @lru_cache(maxsize=1)
-def get_workflow() -> Workflow:
-    settings = get_settings()
-    client = boto3.client("stepfunctions", region_name=settings.aws_region)
-    state_machine_arn = os.environ["CWD_INGESTION_STATE_MACHINE_ARN"]
-    return Workflow(client, state_machine_arn=state_machine_arn)
-
-
-@lru_cache(maxsize=1)
 def get_vector_index() -> VectorIndexProtocol:
+    """`answering`'s role only has `s3vectors:QueryVectors` (docs/07-security.md#iam) — it
+    reads the project's index, never creates or writes to it."""
     settings = get_settings()
     client = boto3.client("s3vectors", region_name=settings.aws_region)
     bucket = os.environ["CWD_VECTOR_BUCKET_NAME"]
@@ -50,8 +44,21 @@ def get_vector_index() -> VectorIndexProtocol:
 
 
 @lru_cache(maxsize=1)
-def get_answering_invoker() -> AnsweringInvokerProtocol:
+def get_nova() -> NovaEmbeddingsProtocol:
     settings = get_settings()
-    client = boto3.client("lambda", region_name=settings.aws_region)
-    function_name = os.environ["CWD_ANSWERING_FUNCTION_NAME"]
-    return AnsweringInvoker(client, function_name=function_name)
+    client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
+    return NovaEmbeddings(settings, client)
+
+
+@lru_cache(maxsize=1)
+def get_bedrock() -> BedrockMessages:
+    settings = get_settings()
+    client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
+    return BedrockMessages(settings, client)
+
+
+@lru_cache(maxsize=1)
+def get_guardrail() -> Guardrail:
+    settings = get_settings()
+    client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
+    return Guardrail(settings, client)
