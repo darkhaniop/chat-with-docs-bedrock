@@ -28,11 +28,18 @@ pytestmark = pytest.mark.integration
 
 FIXTURES_DIR = Path(__file__).resolve().parents[4] / "e2e" / "fixtures"
 
-# Hand-checked against e2e/fixtures/five-page.pdf, the same fixture and sentence
-# `services/ingestion/tests/integration/test_ingest_pipeline.py` already pins on page 3.
-_EXPECTED_PAGE = 3
-_EXPECTED_SENTENCE_SUBSTRING = "Energy consumption per square foot"
-_QUESTION = "What happened to energy consumption per square foot at the facility?"
+# born-digital.pdf, not five-page.pdf: this needs a sentence that uniquely identifies *one*
+# page. five-page.pdf's body text is deliberately identical padding on every page (it exists to
+# exercise the Distributed Map's page fan-out, docs/03-ingestion.md, not citation
+# distinctiveness) — the same sentence used here for the assertion actually appears verbatim on
+# all five of its pages, found live when this test first ran against a real deploy: the citation
+# was completely correct (right text, right rects) but "wrong" page only because the question
+# had no unique answer among five identical candidates. born-digital.pdf is a single page, so
+# there is no such ambiguity; it's also `e2e/fixtures/eval/questions.json`'s `bd-1`, already
+# hand-verified once.
+_EXPECTED_PAGE = 1
+_EXPECTED_SENTENCE_SUBSTRING = "94% uptime"
+_QUESTION = "What was the facility's uptime in Q3?"
 
 
 def _request(
@@ -52,8 +59,10 @@ def _request(
         return error.code, json.loads(error.read())
 
 
-def _upload_and_ingest(cognito_config: CognitoConfig, token: str) -> tuple[str, str]:
-    filename, content_type = "five-page.pdf", "application/pdf"
+def _upload_and_ingest(
+    cognito_config: CognitoConfig, token: str, filename: str = "five-page.pdf"
+) -> tuple[str, str]:
+    content_type = "application/pdf"
     data = (FIXTURES_DIR / filename).read_bytes()
 
     status, body = _request(
@@ -106,7 +115,9 @@ def _upload_and_ingest(cognito_config: CognitoConfig, token: str) -> tuple[str, 
 def test_a_question_with_a_known_answer_resolves_to_the_expected_citation(
     cognito_config: CognitoConfig, seeded_user_token: str
 ) -> None:
-    project_id, document_id = _upload_and_ingest(cognito_config, seeded_user_token)
+    project_id, document_id = _upload_and_ingest(
+        cognito_config, seeded_user_token, "born-digital.pdf"
+    )
     try:
         status, body = _request(
             "POST",
