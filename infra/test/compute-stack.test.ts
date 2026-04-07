@@ -116,17 +116,24 @@ describe("CwdComputeStack", () => {
       for (const statement of bedrockStatements) {
         const resources = ([] as unknown[]).concat(statement.Resource ?? []);
         expect(resources).not.toContain("*");
-        const actions = ([] as unknown[]).concat(statement.Action ?? []);
+        const actions = ([] as unknown[]).concat(statement.Action ?? []).sort();
         if (name.startsWith("AnsweringFunction")) {
-          expect(actions.sort()).toEqual(
-            ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"].sort(),
-          );
           const joined = JSON.stringify(resources);
-          expect(joined).toContain("inference-profile/us.anthropic.claude-sonnet-4-6");
-          expect(joined).toContain(
-            "inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
-          );
-          expect(joined).toContain("foundation-model/anthropic.claude-sonnet-4-6");
+          if (actions.length > 1) {
+            expect(actions).toEqual(
+              ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"].sort(),
+            );
+            expect(joined).toContain("inference-profile/us.anthropic.claude-sonnet-4-6");
+            expect(joined).toContain(
+              "inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            );
+            expect(joined).toContain("foundation-model/anthropic.claude-sonnet-4-6");
+          } else {
+            expect(actions).toEqual(["bedrock:InvokeModel"]);
+            expect(joined).toContain(
+              "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
+            );
+          }
         } else {
           expect(statement.Action).toBe("bedrock:InvokeModel");
           expect(JSON.stringify(resources)).toContain(
@@ -135,6 +142,24 @@ describe("CwdComputeStack", () => {
         }
       }
     }
+  });
+
+  it("grants the answering function bedrock:InvokeModel on the Nova embeddings model, not just Sonnet/Haiku", () => {
+    const policies = template.findResources("AWS::IAM::Policy", {
+      Properties: {
+        PolicyName: Match.stringLikeRegexp("^AnsweringFunctionServiceRoleDefaultPolicy"),
+      },
+    });
+    const statements = Object.values(policies).flatMap(
+      (p) => p.Properties.PolicyDocument.Statement as Array<Record<string, unknown>>,
+    );
+    const novaStatements = statements.filter((s) =>
+      JSON.stringify(s.Resource ?? "").includes(
+        "foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
+      ),
+    );
+    expect(novaStatements).toHaveLength(1);
+    expect(novaStatements[0]?.Action).toBe("bedrock:InvokeModel");
   });
 
   it("grants the api function lambda:InvokeFunction scoped to the answering function only", () => {

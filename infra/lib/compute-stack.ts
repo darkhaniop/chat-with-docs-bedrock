@@ -22,6 +22,8 @@ import { dashboardName } from "./naming";
 const SONNET_MODEL_ID = "us.anthropic.claude-sonnet-4-6";
 const HAIKU_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0";
 
+const NOVA_MODEL_ID = "amazon.nova-2-multimodal-embeddings-v1:0";
+
 const US_INFERENCE_PROFILE_REGIONS = ["us-east-1", "us-east-2", "us-west-2"];
 
 function bedrockInferenceProfileArns(modelId: string, region: string, account: string): string[] {
@@ -144,7 +146,7 @@ export class CwdComputeStack extends Stack {
     this.ingestionPipeline.stateMachine.grantStartExecution(this.apiFunction);
     this.answeringFunction.grantInvoke(this.apiFunction);
 
-    // A `PENDING` document whose client never called `:ingest` is swept daily rather than by a
+    // A `PENDING` document whose client never called `/ingest` is swept daily rather than by a
     // bucket lifecycle rule, because the rule can't see DynamoDB state. Shares the `api` image
     // (same CMD-selects-handler convention as every other Lambda in this project) but gets its
     // own role, log group, and function.
@@ -295,6 +297,13 @@ export class CwdComputeStack extends Stack {
       new iam.PolicyStatement({
         actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
         resources: modelArns,
+      }),
+    );
+
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:InvokeModel"],
+        resources: [`arn:aws:bedrock:${region}::foundation-model/${NOVA_MODEL_ID}`],
       }),
     );
   }
