@@ -132,7 +132,10 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               ],
             },
             {
-              "Action": "s3vectors:QueryVectors",
+              "Action": [
+                "s3vectors:QueryVectors",
+                "s3vectors:GetVectors",
+              ],
               "Effect": "Allow",
               "Resource": [
                 {

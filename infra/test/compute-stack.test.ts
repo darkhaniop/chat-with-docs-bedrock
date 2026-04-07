@@ -178,7 +178,7 @@ describe("CwdComputeStack", () => {
     expect(resources).toContain("AnsweringFunction");
   });
 
-  it("scopes the answering function's s3vectors grant to QueryVectors only, never wildcarded", () => {
+  it("scopes the answering function's s3vectors grant to QueryVectors+GetVectors only, never wildcarded", () => {
     const policies = template.findResources("AWS::IAM::Policy", {
       Properties: {
         PolicyName: Match.stringLikeRegexp("^AnsweringFunctionServiceRoleDefaultPolicy"),
@@ -191,7 +191,9 @@ describe("CwdComputeStack", () => {
       JSON.stringify(s.Action ?? "").includes("s3vectors:"),
     );
     expect(s3vectorsStatements).toHaveLength(1);
-    expect(s3vectorsStatements[0]?.Action).toBe("s3vectors:QueryVectors");
+    expect(([] as unknown[]).concat(s3vectorsStatements[0]?.Action ?? []).sort()).toEqual(
+      ["s3vectors:GetVectors", "s3vectors:QueryVectors"].sort(),
+    );
     const resources = JSON.stringify(s3vectorsStatements[0]?.Resource);
     expect(resources).not.toBe('"*"');
     expect(resources).toContain("VectorBucket");

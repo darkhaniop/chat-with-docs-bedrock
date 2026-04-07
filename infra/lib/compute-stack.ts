@@ -282,7 +282,7 @@ export class CwdComputeStack extends Stack {
     const vectorBucketArn = props.vectorBucket.attrVectorBucketArn;
     fn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["s3vectors:QueryVectors"],
+        actions: ["s3vectors:QueryVectors", "s3vectors:GetVectors"],
         resources: [vectorBucketArn, `${vectorBucketArn}/index/*`],
       }),
     );
