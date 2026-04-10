@@ -115,7 +115,10 @@ def post_message(
     # (status: STREAMING)") gives `GET .../messages` and the stuck-message sweeper something to
     # find immediately, before `answering` ever picks the job off the queue. `answering.turn.
     # run_turn`'s own `_persist` overwrites this same item (same `message_id`) with the resolved
-    # content — a `PutItem` replaces wholesale, so no separate "update" path is needed.
+    # content — a `PutItem` replaces wholesale, so no separate "update" path is needed. No
+    # `increment_message_count` call here: `_persist` already does one when it finalizes this
+    # same message id, and counting both would double-count the assistant turn (`messageCount`
+    # transiently undercounts by one live turn while `STREAMING`, which nothing depends on).
     repo.create_message(
         message_id=assistant_message_id,
         conversation_id=conversation_id,
@@ -125,7 +128,6 @@ def post_message(
         status="STREAMING",
         text="",
     )
-    repo.increment_message_count(conversation_id, conversation.project_id, by=1)
 
     payload = {
         "conversationId": conversation_id,

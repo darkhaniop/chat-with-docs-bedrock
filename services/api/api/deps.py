@@ -12,6 +12,7 @@ import boto3
 
 from common.answer_queue import AnswerQueueProtocol, SqsAnswerQueue
 from common.config import get_settings
+from common.events import AppSyncEventsPublisher, EventsPublisher
 from common.repo import Repo
 from common.storage import DocumentsStore
 from common.vectors import VectorIndex, VectorIndexProtocol
@@ -55,3 +56,9 @@ def get_answer_queue() -> AnswerQueueProtocol:
     client = boto3.client("sqs", region_name=settings.aws_region)
     queue_url = os.environ["CWD_ANSWER_QUEUE_URL"]
     return SqsAnswerQueue(client, queue_url=queue_url)
+
+
+@lru_cache(maxsize=1)
+def get_events() -> EventsPublisher:
+    settings = get_settings()
+    return AppSyncEventsPublisher(domain=settings.events_http_domain, region=settings.aws_region)
