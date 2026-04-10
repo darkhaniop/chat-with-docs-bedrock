@@ -11,6 +11,7 @@ wire format everywhere, so the rest of this module never touches `{"S": ...}` sh
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -776,6 +777,26 @@ class Repo:
             ExpressionAttributeValues=_ser({":null": None, ":zero": 0, ":now": now_iso()}),
         )
 
+    def release_lock_if_holder(self, conversation_id: str, message_id: str) -> None:
+        """Same as `release_lock`, but only if `activeMessageId` still equals `message_id` — used
+        by the stuck-message sweeper and the DLQ handler (docs/04-retrieval-and-citations.md's
+        failure table), both of which act minutes after the fact and must not clobber a *newer*
+        legitimate in-flight message that claimed the lock in the meantime. A lost race here is
+        silently fine (`ConditionalCheckFailedException` means someone else already holds or
+        cleared the lock, which is exactly the state this call wanted anyway)."""
+        with contextlib.suppress(self._client.exceptions.ConditionalCheckFailedException):
+            self._client.update_item(
+                TableName=self._table,
+                Key=_ser({"pk": f"CONV#{conversation_id}", "sk": "META"}),
+                UpdateExpression=(
+                    "SET activeMessageId = :null, lockExpiresAt = :zero, updatedAt = :now"
+                ),
+                ConditionExpression="activeMessageId = :mid",
+                ExpressionAttributeValues=_ser(
+                    {":null": None, ":zero": 0, ":now": now_iso(), ":mid": message_id}
+                ),
+            )
+
     def delete_conversation(self, conversation: Conversation) -> None:
         self._client.transact_write_items(
             TransactItems=[
@@ -874,6 +895,56 @@ class Repo:
         }
         self._client.put_item(TableName=self._table, Item=_ser(item))
         return message
+
+    def request_cancel(self, conversation_id: str, message_id: str) -> bool:
+        """`/cancel` (docs/05-api-contracts.md): "best-effort ... an already-completed turn
+        returns 202 and does nothing." Conditioned on `status = STREAMING` so a cancel that
+        arrives after the turn has already resolved is the documented no-op rather than an
+        error, and so a cancel can never resurrect a terminal message by flipping a flag on it.
+        Returns `False` (never raises) on that no-op case, same convention as `claim_lock`."""
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=_ser({"pk": f"CONV#{conversation_id}", "sk": f"MSG#{message_id}"}),
+                UpdateExpression="SET cancelRequested = :true",
+                ConditionExpression="#s = :streaming",
+                ExpressionAttributeNames={"#s": "status"},
+                ExpressionAttributeValues=_ser({":true": True, ":streaming": "STREAMING"}),
+            )
+            return True
+        except self._client.exceptions.ConditionalCheckFailedException:
+            return False
+
+    def scan_stuck_streaming_messages(self, *, older_than_iso: str) -> list[Message]:
+        """Full-table scan for the stuck-message sweeper (docs/04-retrieval-and-citations.md's
+        failure table: "Lambda times out (300s) -> Message left STREAMING; a sweeper marks
+        messages stuck > 10 minutes as FAILED"). A scan, not a query, for the same reason
+        `scan_stale_pending_documents` is — a once-every-few-minutes maintenance job, not a
+        request-path access pattern, so a speculative GSI isn't worth adding for it."""
+        messages: list[Message] = []
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "FilterExpression": (
+                "begins_with(sk, :prefix) AND entity = :entity AND #s = :status"
+                " AND createdAt < :cutoff"
+            ),
+            "ExpressionAttributeNames": {"#s": "status"},
+            "ExpressionAttributeValues": _ser(
+                {
+                    ":prefix": "MSG#",
+                    ":entity": "Message",
+                    ":status": "STREAMING",
+                    ":cutoff": older_than_iso,
+                }
+            ),
+        }
+        while True:
+            response = self._client.scan(**kwargs)
+            messages.extend(Message.model_validate(_deser(i)) for i in response.get("Items", []))
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                return messages
+            kwargs["ExclusiveStartKey"] = last_key
 
     def get_message(self, conversation_id: str, message_id: str) -> Message | None:
         response = self._client.get_item(

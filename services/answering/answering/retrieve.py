@@ -14,6 +14,7 @@ from common.bedrock.embeddings import NovaEmbeddingsProtocol
 from common.config import Settings
 from common.models import Chunk
 from common.repo import Repo
+from common.retry import with_retry
 from common.vectors import VectorIndexProtocol, VectorMatch
 
 PageKey = tuple[str, int]  # (documentId, pageNumber)
@@ -68,7 +69,15 @@ def retrieve(
     pinned_document_ids: list[str] | None = None,
 ) -> RetrievalResult:
     index_name = settings.vector_index_name(project_id)
-    query_vector = nova.embed_text(query_text, purpose=settings.nova_embed_purpose_query)
+    # docs/04 #2, failure table "Embedding fails -> Retry twice, then fail the turn with a
+    # retryable error": this is the one Bedrock call in the turn with no graceful fallback (a
+    # missing query embedding means no search is possible at all), so it's the one that needs
+    # the explicit backoff rather than degrading in place the way `rewrite_query` does.
+    query_vector = with_retry(
+        lambda: nova.embed_text(query_text, purpose=settings.nova_embed_purpose_query),
+        max_attempts=settings.bedrock_retry_max_attempts,
+        base_delay_seconds=settings.bedrock_retry_base_delay_seconds,
+    )
     filter_ = {"documentId": {"$in": pinned_document_ids}} if pinned_document_ids else None
     hits = vector_index.query(
         index_name, query_vector, top_k=settings.vector_query_top_k, filter=filter_

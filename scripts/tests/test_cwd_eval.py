@@ -15,6 +15,7 @@ from scripts.cwd_eval import evaluate_full, evaluate_retrieval, load_questions
 from common.config import get_settings
 from common.repo import Repo
 from common.testing.embeddings import FakeNova
+from common.testing.events import FakeEventsPublisher
 from common.testing.vectors import FakeVectorIndex
 
 _PROJECT_ID = "proj1"
@@ -297,6 +298,7 @@ def test_evaluate_full_reports_page_and_sentence_accuracy(repo: Repo) -> None:
         nova=FakeNova(settings),
         bedrock=_StubBedrock(),
         guardrail=_StubGuardrail(),
+        events=FakeEventsPublisher(),
         settings=settings,
         project_id=project_id,
         questions=questions,
@@ -331,6 +333,7 @@ def test_evaluate_full_reports_a_miss_when_the_expected_sentence_isnt_quoted(rep
         nova=FakeNova(settings),
         bedrock=_StubBedrock(),
         guardrail=_StubGuardrail(),
+        events=FakeEventsPublisher(),
         settings=settings,
         project_id=project_id,
         questions=questions,

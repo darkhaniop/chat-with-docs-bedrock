@@ -13,6 +13,7 @@ from common.bedrock.embeddings import NovaEmbeddings, NovaEmbeddingsProtocol
 from common.bedrock.guardrail import Guardrail
 from common.bedrock.messages import BedrockMessages
 from common.config import get_settings
+from common.events import AppSyncEventsPublisher, EventsPublisher
 from common.repo import Repo
 from common.storage import DocumentsStore
 from common.vectors import VectorIndex, VectorIndexProtocol
@@ -62,3 +63,9 @@ def get_guardrail() -> Guardrail:
     settings = get_settings()
     client = boto3.client("bedrock-runtime", region_name=settings.aws_region)
     return Guardrail(settings, client)
+
+
+@lru_cache(maxsize=1)
+def get_events() -> EventsPublisher:
+    settings = get_settings()
+    return AppSyncEventsPublisher(domain=settings.events_http_domain, region=settings.aws_region)

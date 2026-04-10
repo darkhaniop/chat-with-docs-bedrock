@@ -145,7 +145,10 @@ class Chunk(_CamelModel):
 
 
 MessageRole = Literal["user", "assistant"]
-MessageStatus = Literal["COMPLETE", "STREAMING", "FAILED", "BLOCKED"]
+# "CANCELLED" is Phase 6's addition — a real terminal state distinct from "FAILED" for the
+# `/cancel` path (docs/05-api-contracts.md#conversations-and-messages), so the eval/metrics
+# story can tell "the model failed" apart from "the user stopped it" later without parsing text.
+MessageStatus = Literal["COMPLETE", "STREAMING", "FAILED", "BLOCKED", "CANCELLED"]
 RetrievedKind = Literal["text", "page"]
 
 
@@ -236,9 +239,14 @@ class Message(_CamelModel):
     citations: list[CitationRecord] = Field(default_factory=list)
     usage: Usage | None = None
     latency_ms: LatencyMs | None = None
+    # Phase 6: `/cancel`'s flag (docs/05-api-contracts.md). Internal-only — a client learns about
+    # cancellation from `status: "CANCELLED"`, not this field, so it's excluded from `to_api()`
+    # the same way the conversation lock fields are excluded from `Conversation.to_api()`.
+    cancel_requested: bool = False
     created_at: str
 
     def to_api(self) -> dict[str, object]:
         return self.model_dump(
-            by_alias=True, exclude={"owner_sub", "project_id", "conversation_id"}
+            by_alias=True,
+            exclude={"owner_sub", "project_id", "conversation_id", "cancel_requested"},
         )

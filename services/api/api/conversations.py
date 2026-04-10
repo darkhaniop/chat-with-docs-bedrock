@@ -1,13 +1,12 @@
 """Conversation and message route handlers' business logic
 (docs/05-api-contracts.md#conversations-and-messages).
 
-`post_message` is the interesting one, and it deviates from the documented steady-state
-response. docs/05 describes `202 {userMessage, assistantMessageId, channel}` — a placeholder to
-subscribe against, because the answer turn runs on an SQS worker. Phase 5 has neither the queue
-nor the AppSync channel yet (docs/10-roadmap.md#phase-5: "Synchronous — no SQS worker, no
-streaming yet"), so `post_message` invokes the `answering` Lambda synchronously and returns the
-*resolved* assistant message in the same response: `201 {userMessage, assistantMessage}`. Phase 6
-restores the documented shape without changing anything below `answering.turn.run_turn`.
+`post_message` is the documented steady-state shape as of Phase 6: `202
+{userMessage, assistantMessageId, channel}`. Phase 5's synchronous stand-in (invoke `answering`
+directly, return the resolved message) is gone — the SQS queue and the `CwdDevRealtimeStack`
+channel it names both exist now, so this only writes the user message and a `STREAMING`
+placeholder assistant message, enqueues one job, and returns. `answering.turn.run_turn` (invoked
+off the queue instead of synchronously) does the actual work, unchanged.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ from typing import Any
 from api import validation
 from api.errors import conflict
 from common import authz
-from common.answering_client import AnsweringInvocationError, AnsweringInvokerProtocol
+from common.answer_queue import AnswerQueueProtocol
 from common.repo import NotFound, Repo, new_id
 
 # The lock's TTL needs to comfortably outlive a real answer turn (Bedrock generation with
@@ -25,10 +24,9 @@ from common.repo import NotFound, Repo, new_id
 # the answering Lambda dies without reaching its own `finally` (docs/02-data-model.md: "a stale
 # lock is reclaimable"). `answering`'s own Lambda timeout (300s, docs/01-architecture.md) is the
 # hard ceiling; this is comfortably under it so a stuck lock doesn't outlive the Lambda that
-# could have released it.
+# could have released it. The stuck-message sweeper (10 minutes, docs/04's failure table) is the
+# backstop if even that isn't reached.
 _LOCK_TTL_SECONDS = 280
-
-_FAILED_INVOCATION_TEXT = "Something went wrong while generating this answer. Please try again."
 
 
 def create(repo: Repo, owner_sub: str, project_id: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -83,14 +81,14 @@ def list_messages(
 
 def post_message(
     repo: Repo,
-    invoker: AnsweringInvokerProtocol,
+    queue: AnswerQueueProtocol,
     owner_sub: str,
     conversation_id: str,
     body: dict[str, Any],
 ) -> dict[str, Any]:
     """docs/05-api-contracts.md#conversations-and-messages: validate -> claim the conversation
     lock conditionally (409 `ANSWER_IN_FLIGHT` if already held and unexpired) -> write the user
-    message -> run the answer turn -> return both messages."""
+    message and a `STREAMING` placeholder assistant message -> enqueue -> return `202`."""
     conversation = authz.require_conversation(repo, owner_sub, conversation_id)
     text = validation.validate_post_message(body)
 
@@ -113,6 +111,22 @@ def post_message(
     )
     repo.increment_message_count(conversation_id, conversation.project_id, by=1)
 
+    # The placeholder (docs/05: "Writes the user message and a placeholder assistant message
+    # (status: STREAMING)") gives `GET .../messages` and the stuck-message sweeper something to
+    # find immediately, before `answering` ever picks the job off the queue. `answering.turn.
+    # run_turn`'s own `_persist` overwrites this same item (same `message_id`) with the resolved
+    # content — a `PutItem` replaces wholesale, so no separate "update" path is needed.
+    repo.create_message(
+        message_id=assistant_message_id,
+        conversation_id=conversation_id,
+        project_id=conversation.project_id,
+        owner_sub=owner_sub,
+        role="assistant",
+        status="STREAMING",
+        text="",
+    )
+    repo.increment_message_count(conversation_id, conversation.project_id, by=1)
+
     payload = {
         "conversationId": conversation_id,
         "projectId": conversation.project_id,
@@ -122,37 +136,25 @@ def post_message(
         "pinnedDocumentIds": conversation.pinned_document_ids,
         "history": history,
     }
-    try:
-        assistant_message_body = invoker.invoke(payload)
-    except AnsweringInvocationError:
-        # `answering.turn.run_turn`'s own `finally` releases the lock and persists a `FAILED`
-        # message in every ordinary failure mode — this branch only covers the rarer case where
-        # the invoke itself failed (throttling, network) or the function crashed before its
-        # `finally` ran, so both need a best-effort fallback here too.
-        repo.release_lock(conversation_id)
-        assistant_message = repo.create_message(
-            message_id=assistant_message_id,
-            conversation_id=conversation_id,
-            project_id=conversation.project_id,
-            owner_sub=owner_sub,
-            role="assistant",
-            status="FAILED",
-            text=_FAILED_INVOCATION_TEXT,
-        )
-        repo.increment_message_count(conversation_id, conversation.project_id, by=1)
-        assistant_message_body = assistant_message.to_api()
+    queue.enqueue(payload)
 
-    return {"userMessage": user_message.to_api(), "assistantMessage": assistant_message_body}
+    return {
+        "userMessage": user_message.to_api(),
+        "assistantMessageId": assistant_message_id,
+        "channel": f"/conversations/{conversation_id}",
+    }
 
 
 def cancel_message(
     repo: Repo, owner_sub: str, conversation_id: str, message_id: str
 ) -> dict[str, Any]:
     """docs/05-api-contracts.md: "It is best-effort: an already-completed turn returns 202 and
-    does nothing." Phase 5 is fully synchronous (no async worker to interrupt mid-flight), so by
-    the time a client could call this the turn has already resolved — this is always that no-op
-    case. Phase 6 gives it real teeth (docs/10-roadmap.md#phase-6)."""
+    does nothing." `repo.request_cancel` is the real teeth (docs/10-roadmap.md#phase-6): it flips
+    `cancelRequested` only if the message is still `STREAMING`, which `answering.stream`'s
+    generation loop polls between chunks. Either outcome (flag set, or already-terminal no-op)
+    returns the same `202` — the caller has no way to distinguish them and shouldn't need to."""
     authz.require_conversation(repo, owner_sub, conversation_id)
     if repo.get_message(conversation_id, message_id) is None:
         raise NotFound(message_id)
+    repo.request_cancel(conversation_id, message_id)
     return {"status": "accepted"}

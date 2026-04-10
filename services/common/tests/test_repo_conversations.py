@@ -202,3 +202,86 @@ def test_delete_messages_removes_every_message_under_the_conversation(repo: Repo
 
     items, _ = repo.list_messages(conversation_id, limit=20, cursor=None)
     assert items == []
+
+
+def test_request_cancel_sets_the_flag_on_a_streaming_message(repo: Repo) -> None:
+    _project_id, conversation_id = _project_and_conversation(repo)
+    message = repo.create_message(
+        conversation_id=conversation_id,
+        project_id=_project_id,
+        owner_sub="user-1",
+        role="assistant",
+        status="STREAMING",
+        text="",
+    )
+
+    assert repo.request_cancel(conversation_id, message.message_id) is True
+    fetched = repo.get_message(conversation_id, message.message_id)
+    assert fetched is not None
+    assert fetched.cancel_requested is True
+
+
+def test_request_cancel_is_a_no_op_on_a_terminal_message(repo: Repo) -> None:
+    _project_id, conversation_id = _project_and_conversation(repo)
+    message = repo.create_message(
+        conversation_id=conversation_id,
+        project_id=_project_id,
+        owner_sub="user-1",
+        role="assistant",
+        status="COMPLETE",
+        text="done",
+    )
+
+    assert repo.request_cancel(conversation_id, message.message_id) is False
+    fetched = repo.get_message(conversation_id, message.message_id)
+    assert fetched is not None
+    assert fetched.cancel_requested is False
+
+
+def test_release_lock_if_holder_releases_only_when_it_still_holds(repo: Repo) -> None:
+    _project_id, conversation_id = _project_and_conversation(repo)
+    repo.claim_lock(conversation_id, "message-1", ttl_seconds=60)
+
+    # A different (newer) message already holds the lock — must not clobber it.
+    repo.release_lock(conversation_id)
+    repo.claim_lock(conversation_id, "message-2", ttl_seconds=60)
+    repo.release_lock_if_holder(conversation_id, "message-1")
+    conversation = repo.get_conversation(conversation_id)
+    assert conversation is not None
+    assert conversation.active_message_id == "message-2"
+
+    repo.release_lock_if_holder(conversation_id, "message-2")
+    conversation = repo.get_conversation(conversation_id)
+    assert conversation is not None
+    assert conversation.active_message_id is None
+
+
+def test_scan_stuck_streaming_messages_finds_only_old_streaming_ones(repo: Repo) -> None:
+    _project_id, conversation_id = _project_and_conversation(repo)
+    old_streaming = repo.create_message(
+        conversation_id=conversation_id,
+        project_id=_project_id,
+        owner_sub="user-1",
+        role="assistant",
+        status="STREAMING",
+        text="",
+    )
+    repo.create_message(
+        conversation_id=conversation_id,
+        project_id=_project_id,
+        owner_sub="user-1",
+        role="assistant",
+        status="COMPLETE",
+        text="done",
+    )
+
+    # `createdAt` is set by `create_message` to "now" — every fixture message above is therefore
+    # newer than a cutoff of "now", so nothing should match at that cutoff...
+    from common.repo import now_iso
+
+    assert repo.scan_stuck_streaming_messages(older_than_iso=now_iso()) == []
+
+    # ...but everything (including the terminal one, which the filter must still exclude by
+    # status) matches a cutoff far in the future.
+    stuck = repo.scan_stuck_streaming_messages(older_than_iso="9999-01-01T00:00:00Z")
+    assert [m.message_id for m in stuck] == [old_streaming.message_id]

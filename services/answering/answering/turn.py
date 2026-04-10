@@ -2,17 +2,19 @@
 rewrite -> embed/search/fuse/select -> guard input -> prompt -> generate -> map citations ->
 guard output -> persist.
 
-Synchronous for Phase 5 (docs/10-roadmap.md's Phase 5 goal: "no SQS worker, no streaming yet") —
-`handler.py` calls this directly, and is itself invoked synchronously (Lambda `RequestResponse`)
-by `api`'s POST .../messages route, since `api` must never hold Bedrock permissions
-(docs/07-security.md#iam). Phase 6 replaces the *trigger* (SQS instead of a synchronous invoke)
-and the *generation* call (streamed to the client instead of accumulated here) without needing to
-change the rewrite/retrieve/prompt/citation logic this module wires together.
+Phase 6: `handler.py` invokes this off the SQS answer queue (docs/01-architecture.md#answering-
+sqs--answering-lambda), not synchronously from `api` anymore, and `generate()` republishes to
+AppSync Events as it streams (`answering.stream.StreamPublisher`) instead of only being
+accumulated silently — but the rewrite/retrieve/prompt/citation logic below is unchanged from
+Phase 5, exactly as that phase's own docstring said it would be.
 
-Always returns a persisted `Message` — never raises. A failure after the conversation lock was
-claimed still needs the lock released and the caller (the client waiting on the synchronous
-invoke) still needs *something* to render, so every failure mode ends in a `FAILED`/`BLOCKED`
-assistant message rather than an exception.
+Always returns a persisted `Message` — never raises for an "expected" failure (guardrail block,
+mapping issue, cancellation). A failure after the conversation lock was claimed still needs the
+lock released and *something* persisted for the client to eventually see (via the channel or a
+`GET`), so every such failure mode ends in a terminal assistant message rather than an
+exception. Only a genuinely unexpected error *before* a message can be constructed — none
+observed in practice — would propagate to `handler.py`, where it's expected to reach SQS's
+redrive/DLQ path (docs/04-retrieval-and-citations.md#failure-behaviour).
 """
 
 from __future__ import annotations
@@ -27,10 +29,12 @@ from answering.generate import generate
 from answering.prompt import SYSTEM_PROMPT, build_prompt_content, thin_pages
 from answering.retrieve import retrieve
 from answering.rewrite import HistoryTurn, rewrite_query
+from answering.stream import CANCELLED_CODE, StreamPublisher, TurnCancelledError
 from common.bedrock.embeddings import NovaEmbeddingsProtocol
 from common.bedrock.guardrail import Guardrail
 from common.bedrock.messages import BedrockMessages, Citation
 from common.config import Settings
+from common.events import EventsPublisher
 from common.models import CitationRecord, LatencyMs, Message, RetrievedRef, Usage
 from common.repo import Repo
 from common.storage import DocumentsStore
@@ -40,6 +44,7 @@ logger = Logger(service="answering", child=True)
 
 _BLOCKED_TEXT = "This message was blocked by content safety guardrails."
 _FAILED_TEXT = "Something went wrong while generating this answer. Please try again."
+_CANCELLED_TEXT = "Cancelled."
 
 
 def _guardrail_blocked(
@@ -63,6 +68,7 @@ def run_turn(
     nova: NovaEmbeddingsProtocol,
     bedrock: BedrockMessages,
     guardrail: Guardrail,
+    events: EventsPublisher,
     settings: Settings,
     conversation_id: str,
     project_id: str,
@@ -71,12 +77,32 @@ def run_turn(
     user_text: str,
     pinned_document_ids: list[str],
     history: list[HistoryTurn],
+    # `answering.stream.StreamPublisher`'s real-wall-clock cancellation-poll throttle — a
+    # constructor seam, not a tuning knob (`services/answering/tests/test_turn.py` passes `0` so
+    # a cancellation test doesn't need to sleep a full second).
+    cancel_poll_interval_seconds: float = 1.0,
 ) -> Message:
     start = time.monotonic()
+    channel = f"/conversations/{conversation_id}"
+    seq = 0
+
+    def _publish(event_type: str, data: dict[str, object]) -> None:
+        nonlocal seq
+        seq += 1
+        events.publish(channel, event_type, {"messageId": assistant_message_id, **data}, seq=seq)
+
+    def _next_seq() -> int:
+        nonlocal seq
+        seq += 1
+        return seq
+
+    def _should_cancel() -> bool:
+        message = repo.get_message(conversation_id, assistant_message_id)
+        return message is not None and message.cancel_requested
 
     def _persist(
         *,
-        status: Literal["COMPLETE", "FAILED", "BLOCKED"],
+        status: Literal["COMPLETE", "FAILED", "BLOCKED", "CANCELLED"],
         text: str,
         rewritten_query: str | None = None,
         retrieved: list[RetrievedRef] | None = None,
@@ -101,11 +127,15 @@ def run_turn(
         repo.increment_message_count(conversation_id, project_id, by=1)
         return message
 
+    _publish("message.started", {})
+
     try:
         # #1 rewrite (skipped, by rewrite_query itself, when history is empty).
         rewrite_start = time.monotonic()
         rewritten = rewrite_query(bedrock, settings, history=history, latest_message=user_text)
         rewrite_ms = int((time.monotonic() - rewrite_start) * 1000) if history else None
+        if history:
+            _publish("message.rewritten", {"rewrittenQuery": rewritten})
 
         # #2-5 embed, search, fuse, select, hydrate.
         retrieve_start = time.monotonic()
@@ -130,14 +160,8 @@ def run_turn(
             for hit in result.retrieved
         ]
 
-        # #6 guard (INPUT) — docs/04's numbered step list runs this after retrieval, not before
-        # the rewrite: the rewrite/retrieval calls are cheap next to generation, which is what
-        # this gate exists to avoid paying for on a blocked message.
-        if _guardrail_blocked(guardrail, user_text, source="INPUT"):
-            return _persist(status="BLOCKED", text=_BLOCKED_TEXT, rewritten_query=rewritten)
-
-        # #5 (cont'd) prompt assembly: filenames for human-readable titles, and page images for
-        # text-thin selected pages.
+        # Filenames for both the `message.retrieval` sources list and the prompt's document
+        # titles — computed once from the union of every id either needs.
         document_ids = {c.document_id for c in result.chunks} | {
             p.document_id for p in result.pages
         }
@@ -147,6 +171,29 @@ def run_turn(
             if document is not None:
                 filenames[document_id] = document.filename
 
+        _publish(
+            "message.retrieval",
+            {
+                "sources": [
+                    {
+                        "documentId": page.document_id,
+                        "filename": filenames.get(page.document_id, ""),
+                        "pageNumber": page.page_number,
+                        "score": page.fused_score,
+                    }
+                    for page in result.pages
+                ]
+            },
+        )
+
+        # #6 guard (INPUT) — docs/04's numbered step list runs this after retrieval, not before
+        # the rewrite: the rewrite/retrieval calls are cheap next to generation, which is what
+        # this gate exists to avoid paying for on a blocked message.
+        if _guardrail_blocked(guardrail, user_text, source="INPUT"):
+            _publish("message.blocked", {"reason": "guardrail_intervened"})
+            return _persist(status="BLOCKED", text=_BLOCKED_TEXT, rewritten_query=rewritten)
+
+        # #5 (cont'd) prompt assembly: page images for text-thin selected pages.
         thin = thin_pages(
             result.chunks, result.pages, thin_text_char_threshold=settings.thin_text_char_threshold
         )
@@ -171,11 +218,35 @@ def run_turn(
             }
         ]
 
-        # #7 generate.
-        generated = generate(bedrock, settings, system=SYSTEM_PROMPT, messages=messages)
-
-        # #8 map citations, accumulating the answer text and each text block's char span.
+        # #7 generate — streamed to the client live (docs/04#streaming-to-the-client) via
+        # `StreamPublisher`, which also polls `/cancel`'s flag between chunks.
         chunks_by_id = {c.chunk_id: c for c in result.chunks}
+        publisher = StreamPublisher(
+            events,
+            channel=channel,
+            message_id=assistant_message_id,
+            next_seq=_next_seq,
+            index_to_chunk=prompt_ctx.index_to_chunk,
+            chunks_by_id=chunks_by_id,
+            tick_seconds=settings.stream_batch_tick_ms / 1000,
+            should_cancel=_should_cancel,
+            cancel_poll_interval_seconds=cancel_poll_interval_seconds,
+        )
+        try:
+            generated = generate(
+                bedrock,
+                settings,
+                system=SYSTEM_PROMPT,
+                messages=messages,
+                on_event=publisher.handle_event,
+            )
+        finally:
+            publisher.flush()
+
+        # #8 map citations, accumulating the answer text and each text block's char span. This
+        # is the authoritative pass — independent of, and unaffected by, whatever `StreamPublisher`
+        # published live from the same raw events above (docs/04: "the persisted message is built
+        # from the final message, not from the accumulated deltas").
         answer_text = ""
         citations: list[CitationRecord] = []
         running_offset = 0
@@ -208,6 +279,7 @@ def run_turn(
 
         # #9 guard (OUTPUT).
         if _guardrail_blocked(guardrail, answer_text, source="OUTPUT"):
+            _publish("message.blocked", {"reason": "guardrail_intervened"})
             return _persist(status="BLOCKED", text=_BLOCKED_TEXT, rewritten_query=rewritten)
 
         total_ms = int((time.monotonic() - start) * 1000)
@@ -227,7 +299,7 @@ def run_turn(
         )
 
         # #10 persist.
-        return _persist(
+        message = _persist(
             status="COMPLETE",
             text=answer_text,
             rewritten_query=rewritten,
@@ -236,8 +308,21 @@ def run_turn(
             usage=usage,
             latency_ms=latency_ms,
         )
+        _publish(
+            "message.completed",
+            {
+                "usage": usage.model_dump(by_alias=True),
+                "latencyMs": latency_ms.model_dump(by_alias=True),
+            },
+        )
+        return message
+    except TurnCancelledError:
+        logger.info("answer turn cancelled")
+        _publish("message.failed", {"code": CANCELLED_CODE, "message": _CANCELLED_TEXT})
+        return _persist(status="CANCELLED", text=_CANCELLED_TEXT)
     except Exception:
         logger.exception("answer turn failed")
+        _publish("message.failed", {"code": "INTERNAL_ERROR", "message": _FAILED_TEXT})
         return _persist(status="FAILED", text=_FAILED_TEXT)
     finally:
         repo.release_lock(conversation_id)

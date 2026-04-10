@@ -196,10 +196,10 @@ def _dispatch(route_key: str, event: dict[str, Any]) -> dict[str, Any]:
         owner_sub = _owner_sub(event)
         conversation_id = _path(event, "conversationId")
         return _response(
-            201,
+            202,
             conversations.post_message(
                 deps.get_repo(),
-                deps.get_answering_invoker(),
+                deps.get_answer_queue(),
                 owner_sub,
                 conversation_id,
                 _body(event),

@@ -12,6 +12,7 @@ from common.config import get_settings
 from common.models import Chunk, Page, Sentence
 from common.repo import Repo
 from common.testing.embeddings import FakeNova
+from common.testing.events import FakeEventsPublisher
 from common.testing.vectors import FakeVectorIndex
 from common.vectors import chunk_vector_key
 
@@ -162,6 +163,9 @@ def _run(
     bedrock: _StubBedrock | None = None,
     store: _StubStore | None = None,
     history: list[tuple[str, str]] | None = None,
+    events: FakeEventsPublisher | None = None,
+    assistant_message_id: str = "assistant-1",
+    cancel_poll_interval_seconds: float = 1.0,
 ) -> Any:
     settings = get_settings()
     return run_turn(
@@ -171,14 +175,16 @@ def _run(
         nova=FakeNova(settings=settings),
         bedrock=bedrock or _StubBedrock(),
         guardrail=guardrail or _StubGuardrail(),
+        events=events or FakeEventsPublisher(),
         settings=settings,
         conversation_id=conversation_id,
         project_id=project_id,
         owner_sub="user-1",
-        assistant_message_id="assistant-1",
+        assistant_message_id=assistant_message_id,
         user_text="What was Q3 uptime?",
         pinned_document_ids=[],
         history=history or [],
+        cancel_poll_interval_seconds=cancel_poll_interval_seconds,
     )
 
 
@@ -187,6 +193,7 @@ def test_happy_path_persists_a_complete_message_with_a_mapped_citation(repo: Rep
         repo, chunk_text="Uptime was 94% uptime in Q3, a new record for the facility."
     )
     bedrock = _StubBedrock()
+    events = FakeEventsPublisher()
 
     message = _run(
         repo,
@@ -194,6 +201,7 @@ def test_happy_path_persists_a_complete_message_with_a_mapped_citation(repo: Rep
         conversation_id=conversation_id,
         project_id=project_id,
         bedrock=bedrock,
+        events=events,
     )
 
     assert message.status == "COMPLETE"
@@ -216,6 +224,29 @@ def test_happy_path_persists_a_complete_message_with_a_mapped_citation(repo: Rep
     assert conversation is not None
     assert conversation.active_message_id is None
     assert conversation.message_count == 1
+
+    # docs/05-api-contracts.md#appsync-events: the conversation-channel event vocabulary, in
+    # order, with a strictly increasing `seq` on this one channel.
+    channel = f"/conversations/{conversation_id}"
+    assert all(e.channel == channel for e in events.events)
+    types = [e.event_type for e in events.events]
+    # `message.citation` precedes `message.delta` here — the `citations_delta` event arrives
+    # before `content_block_stop` flushes the buffered text (docs/04: "a citation can be
+    # published before the text block it belongs to has finished").
+    assert types == [
+        "message.started",
+        "message.retrieval",
+        "message.citation",
+        "message.delta",
+        "message.completed",
+    ]
+    seqs = [e.seq for e in events.events]
+    assert seqs == sorted(seqs)
+    assert len(set(seqs)) == len(seqs)
+    delta_event = next(e for e in events.events if e.event_type == "message.delta")
+    assert delta_event.data["text"] == "Uptime was 94% uptime in Q3."
+    completed_event = events.events[-1]
+    assert completed_event.data["usage"]["outputTokens"] == 8
 
 
 def test_first_message_in_a_conversation_skips_rewrite(repo: Repo) -> None:
@@ -327,6 +358,44 @@ def test_an_exception_mid_turn_persists_a_failed_message_and_still_releases_the_
     conversation = repo.get_conversation(conversation_id)
     assert conversation is not None
     assert conversation.active_message_id is None
+
+
+def test_cancellation_between_chunks_persists_a_cancelled_message(repo: Repo) -> None:
+    project_id, _document_id, conversation_id, vector_index = _seed_project_document_and_chunk(
+        repo, chunk_text="Uptime was 94% uptime in Q3."
+    )
+    # The placeholder assistant message `api.conversations.post_message` writes before enqueuing
+    # (docs/05-api-contracts.md) — `StreamPublisher.should_cancel` reads this same item.
+    repo.create_message(
+        message_id="assistant-1",
+        conversation_id=conversation_id,
+        project_id=project_id,
+        owner_sub="user-1",
+        role="assistant",
+        status="STREAMING",
+        text="",
+    )
+    assert repo.request_cancel(conversation_id, "assistant-1") is True
+
+    events = FakeEventsPublisher()
+    message = _run(
+        repo,
+        vector_index=vector_index,
+        conversation_id=conversation_id,
+        project_id=project_id,
+        events=events,
+        assistant_message_id="assistant-1",
+        # Real-time throttled to 1s by default (docs/answering/stream.py) — 0 makes the fake
+        # bedrock stream's very first text delta trip the check without a real sleep.
+        cancel_poll_interval_seconds=0,
+    )
+
+    assert message.status == "CANCELLED"
+    conversation = repo.get_conversation(conversation_id)
+    assert conversation is not None
+    assert conversation.active_message_id is None
+    assert events.events[-1].event_type == "message.failed"
+    assert events.events[-1].data["code"] == "CANCELLED"
 
 
 def test_no_retrieved_documents_still_generates_and_notes_it_in_the_prompt(repo: Repo) -> None:

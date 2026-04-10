@@ -32,6 +32,7 @@ from common.bedrock.embeddings import NovaEmbeddings, NovaEmbeddingsProtocol
 from common.bedrock.guardrail import Guardrail
 from common.bedrock.messages import BedrockMessages
 from common.config import Settings, get_settings
+from common.events import AppSyncEventsPublisher, EventsPublisher
 from common.repo import Repo, new_id
 from common.storage import DocumentsStore
 from common.vectors import VectorIndex, VectorIndexProtocol
@@ -104,6 +105,7 @@ def evaluate_full(
     nova: NovaEmbeddingsProtocol,
     bedrock: BedrockMessages,
     guardrail: Guardrail,
+    events: EventsPublisher,
     settings: Settings,
     project_id: str,
     questions: list[dict[str, Any]],
@@ -150,6 +152,7 @@ def evaluate_full(
             nova=nova,
             bedrock=bedrock,
             guardrail=guardrail,
+            events=events,
             settings=settings,
             conversation_id=conversation.conversation_id,
             project_id=project_id,
@@ -259,6 +262,10 @@ def main() -> None:
     store = DocumentsStore(s3, settings, bucket_name=settings.documents_bucket_name(account_id))
     bedrock = BedrockMessages(settings, bedrock_runtime)
     guardrail = Guardrail(settings, bedrock_runtime)
+    # `AppSyncEventsPublisher` no-ops when `events_http_domain` is unset (docs/05-api-contracts.
+    # md#appsync-events) — this script runs locally against real Bedrock/S3-Vectors but outside
+    # any Lambda, so it has no `CWD_EVENTS_HTTP_DOMAIN` env var unless the caller sets one.
+    events = AppSyncEventsPublisher(domain=settings.events_http_domain, region=settings.aws_region)
 
     report = evaluate_full(
         repo=repo,
@@ -267,6 +274,7 @@ def main() -> None:
         nova=nova,
         bedrock=bedrock,
         guardrail=guardrail,
+        events=events,
         settings=settings,
         project_id=args.project_id,
         questions=load_questions(),

@@ -13,6 +13,7 @@ produced it.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,11 +36,20 @@ def generate(
     *,
     system: str,
     messages: list[dict[str, Any]],
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> GeneratedMessage:
     """Consumes the raw Bedrock event stream defensively (docs/04: "ignore unknown delta types,
     reconcile against the final message ... an unexpected shape degrades to 'citations appear at
     the end' rather than to a crash") — an unrecognised `type` or an `index` outside the blocks
     accumulated so far is simply skipped, never raised.
+
+    `on_event`, when given, is called with every raw event before this function's own
+    accumulation logic looks at it — `answering.stream.StreamPublisher.handle_event` is the one
+    real caller (docs/04#streaming-to-the-client), republishing deltas/citations live while this
+    function keeps building the same accumulated `GeneratedMessage` it always has, unchanged, for
+    `answering.turn.run_turn`'s authoritative post-hoc citation mapping. If `on_event` raises
+    (`answering.stream.TurnCancelledError`, on a `/cancel` request), the exception propagates out of
+    this loop and the stream is abandoned mid-flight — the caller is expected to catch it.
     """
     start = time.monotonic()
     blocks: list[dict[str, Any]] = []
@@ -53,6 +63,9 @@ def generate(
         thinking={"type": "adaptive"},
         effort=settings.generation_effort,
     ):
+        if on_event is not None:
+            on_event(event)
+
         event_type = event.get("type")
 
         if event_type == "message_start":

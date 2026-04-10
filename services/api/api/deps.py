@@ -10,7 +10,7 @@ from functools import lru_cache
 
 import boto3
 
-from common.answering_client import AnsweringInvoker, AnsweringInvokerProtocol
+from common.answer_queue import AnswerQueueProtocol, SqsAnswerQueue
 from common.config import get_settings
 from common.repo import Repo
 from common.storage import DocumentsStore
@@ -50,8 +50,8 @@ def get_vector_index() -> VectorIndexProtocol:
 
 
 @lru_cache(maxsize=1)
-def get_answering_invoker() -> AnsweringInvokerProtocol:
+def get_answer_queue() -> AnswerQueueProtocol:
     settings = get_settings()
-    client = boto3.client("lambda", region_name=settings.aws_region)
-    function_name = os.environ["CWD_ANSWERING_FUNCTION_NAME"]
-    return AnsweringInvoker(client, function_name=function_name)
+    client = boto3.client("sqs", region_name=settings.aws_region)
+    queue_url = os.environ["CWD_ANSWER_QUEUE_URL"]
+    return SqsAnswerQueue(client, queue_url=queue_url)

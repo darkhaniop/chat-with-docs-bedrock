@@ -114,11 +114,25 @@ class Settings(BaseSettings):
     guardrail_id: str | None = None
     guardrail_version: str = "DRAFT"
 
-    # AppSync Events (docs/05-api-contracts.md#appsync-events). `CwdDevRealtimeStack` — the API
-    # this domain points at — is built in Phase 6; `common.events.AppSyncEventsPublisher`
-    # no-ops until then. The bare domain (`{api-id}.appsync-api.{region}.amazonaws.com`), not a
-    # full URL — `publish` builds the `/event` path itself.
+    # AppSync Events (docs/05-api-contracts.md#appsync-events). `CwdDevRealtimeStack` (Phase 6)
+    # is the API this domain points at; `common.events.AppSyncEventsPublisher` no-ops when unset
+    # (useful for any environment/test run without the realtime stack deployed). The bare domain
+    # (`{api-id}.appsync-api.{region}.amazonaws.com`), not a full URL — `publish` builds the
+    # `/event` path itself.
     events_http_domain: str | None = None
+
+    # Stuck-message sweeper (docs/04-retrieval-and-citations.md#failure-behaviour: "Lambda times
+    # out (300s) -> Message left STREAMING; a sweeper marks messages stuck > 10 minutes as
+    # FAILED"). 300s is `answering`'s own Lambda timeout — 10 minutes gives real generations a
+    # wide margin before the sweeper treats one as abandoned.
+    stuck_message_threshold_minutes: int = 10
+
+    # Bedrock throttling retry (docs/04-retrieval-and-citations.md#failure-behaviour: "Bedrock
+    # throttles -> Exponential backoff inside the Lambda"). Same policy shape as
+    # `ingestion.embed._with_retry`/`ingestion.ocr`'s existing retry — "retry twice" means three
+    # attempts total (one original + two retries) before failing the turn.
+    bedrock_retry_max_attempts: int = 3
+    bedrock_retry_base_delay_seconds: float = 2.0
 
     # Observability (docs/09-operations.md#observability)
     log_retention_days: int = 30
