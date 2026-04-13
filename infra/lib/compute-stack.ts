@@ -5,6 +5,7 @@ import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-
 import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import type * as appsync from "aws-cdk-lib/aws-appsync";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecrAssets from "aws-cdk-lib/aws-ecr-assets";
@@ -12,9 +13,11 @@ import * as events from "aws-cdk-lib/aws-events";
 import * as eventsTargets from "aws-cdk-lib/aws-events-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import type * as s3vectors from "aws-cdk-lib/aws-s3vectors";
+import * as sqs from "aws-cdk-lib/aws-sqs";
 import type { Construct } from "constructs";
 import { IngestionPipeline } from "./ingestion-pipeline";
 import { dashboardName } from "./naming";
@@ -44,6 +47,7 @@ export interface CwdComputeStackProps extends StackProps {
   readonly table: dynamodb.ITableV2;
   readonly documentsBucket: s3.IBucket;
   readonly vectorBucket: s3vectors.CfnVectorBucket;
+  readonly eventsApi: appsync.IEventApi;
 }
 
 /** The deployed commit, for `/health` (it's how drift between `main` and the deployed stack is
@@ -70,7 +74,11 @@ export class CwdComputeStack extends Stack {
   public readonly api: apigwv2.HttpApi;
   public readonly apiFunction: lambda.DockerImageFunction;
   public readonly sweeperFunction: lambda.DockerImageFunction;
+  public readonly messageSweeperFunction: lambda.DockerImageFunction;
+  public readonly dlqHandlerFunction: lambda.DockerImageFunction;
   public readonly answeringFunction: lambda.DockerImageFunction;
+  public readonly answerQueue: sqs.Queue;
+  public readonly answerQueueDlq: sqs.Queue;
   public readonly ingestionPipeline: IngestionPipeline;
 
   constructor(scope: Construct, id: string, props: CwdComputeStackProps) {
@@ -85,6 +93,7 @@ export class CwdComputeStack extends Stack {
       table: props.table,
       documentsBucket: props.documentsBucket,
       vectorBucket: props.vectorBucket,
+      eventsApi: props.eventsApi,
     });
 
     const apiImageCode = lambda.DockerImageCode.fromImageAsset(repoRoot, {
@@ -100,12 +109,24 @@ export class CwdComputeStack extends Stack {
       CWD_COMMIT: currentCommit(),
       CWD_DOCUMENTS_BUCKET_NAME: props.documentsBucket.bucketName,
       CWD_VECTOR_BUCKET_NAME: props.vectorBucket.vectorBucketName as string,
+      CWD_EVENTS_HTTP_DOMAIN: props.eventsApi.httpDns,
     };
 
     const apiLogGroup = new logs.LogGroup(this, "ApiLogGroup", {
       logGroupName: `/aws/lambda/cwd-${props.env2}-api`,
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    this.answerQueueDlq = new sqs.Queue(this, "AnswerQueueDlq", {
+      queueName: `cwd-${props.env2}-answer-queue-dlq`,
+      retentionPeriod: Duration.days(14),
+      visibilityTimeout: Duration.minutes(2),
+    });
+    this.answerQueue = new sqs.Queue(this, "AnswerQueue", {
+      queueName: `cwd-${props.env2}-answer-queue`,
+      visibilityTimeout: Duration.minutes(5),
+      deadLetterQueue: { queue: this.answerQueueDlq, maxReceiveCount: 2 },
     });
 
     const answeringLogGroup = new logs.LogGroup(this, "AnsweringLogGroup", {
@@ -127,7 +148,9 @@ export class CwdComputeStack extends Stack {
       logGroup: answeringLogGroup,
       environment: sharedEnvironment,
     });
+    this.answeringFunction.addEventSource(new SqsEventSource(this.answerQueue, { batchSize: 1 }));
     this._grantAnsweringPermissions(this.answeringFunction, props);
+    props.eventsApi.grantPublish(this.answeringFunction);
 
     this.apiFunction = new lambda.DockerImageFunction(this, "ApiFunction", {
       functionName: `cwd-${props.env2}-api`,
@@ -139,17 +162,64 @@ export class CwdComputeStack extends Stack {
       environment: {
         ...sharedEnvironment,
         CWD_INGESTION_STATE_MACHINE_ARN: this.ingestionPipeline.stateMachine.stateMachineArn,
-        CWD_ANSWERING_FUNCTION_NAME: this.answeringFunction.functionName,
+        CWD_ANSWER_QUEUE_URL: this.answerQueue.queueUrl,
       },
     });
     this._grantApiPermissions(this.apiFunction, props);
     this.ingestionPipeline.stateMachine.grantStartExecution(this.apiFunction);
-    this.answeringFunction.grantInvoke(this.apiFunction);
+    this.answerQueue.grantSendMessages(this.apiFunction);
 
-    // A `PENDING` document whose client never called `/ingest` is swept daily rather than by a
-    // bucket lifecycle rule, because the rule can't see DynamoDB state. Shares the `api` image
-    // (same CMD-selects-handler convention as every other Lambda in this project) but gets its
-    // own role, log group, and function.
+    const messageSweeperLogGroup = new logs.LogGroup(this, "MessageSweeperLogGroup", {
+      logGroupName: `/aws/lambda/cwd-${props.env2}-message-sweeper`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    this.messageSweeperFunction = new lambda.DockerImageFunction(this, "MessageSweeperFunction", {
+      functionName: `cwd-${props.env2}-message-sweeper`,
+      code: lambda.DockerImageCode.fromImageAsset(repoRoot, {
+        file: "services/Dockerfile",
+        buildArgs: { SERVICE: "api" },
+        platform: ecrAssets.Platform.LINUX_AMD64,
+        cmd: ["api.message_sweeper.lambda_handler"],
+      }),
+      architecture: lambda.Architecture.X86_64,
+      memorySize: 512,
+      timeout: Duration.minutes(5),
+      logGroup: messageSweeperLogGroup,
+      environment: sharedEnvironment,
+    });
+    props.table.grantReadWriteData(this.messageSweeperFunction);
+    props.eventsApi.grantPublish(this.messageSweeperFunction);
+    new events.Rule(this, "MessageSweeperSchedule", {
+      schedule: events.Schedule.rate(Duration.minutes(5)),
+      targets: [new eventsTargets.LambdaFunction(this.messageSweeperFunction)],
+    });
+
+    const dlqHandlerLogGroup = new logs.LogGroup(this, "DlqHandlerLogGroup", {
+      logGroupName: `/aws/lambda/cwd-${props.env2}-answering-dlq-handler`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    this.dlqHandlerFunction = new lambda.DockerImageFunction(this, "DlqHandlerFunction", {
+      functionName: `cwd-${props.env2}-answering-dlq-handler`,
+      code: lambda.DockerImageCode.fromImageAsset(repoRoot, {
+        file: "services/Dockerfile",
+        buildArgs: { SERVICE: "api" },
+        platform: ecrAssets.Platform.LINUX_AMD64,
+        cmd: ["api.dlq_handler.lambda_handler"],
+      }),
+      architecture: lambda.Architecture.X86_64,
+      memorySize: 512,
+      timeout: Duration.minutes(1),
+      logGroup: dlqHandlerLogGroup,
+      environment: sharedEnvironment,
+    });
+    this.dlqHandlerFunction.addEventSource(
+      new SqsEventSource(this.answerQueueDlq, { batchSize: 1 }),
+    );
+    props.table.grantReadWriteData(this.dlqHandlerFunction);
+    props.eventsApi.grantPublish(this.dlqHandlerFunction);
+
     const sweeperLogGroup = new logs.LogGroup(this, "SweeperLogGroup", {
       logGroupName: `/aws/lambda/cwd-${props.env2}-document-sweeper`,
       retention: logs.RetentionDays.ONE_MONTH,
@@ -227,7 +297,12 @@ export class CwdComputeStack extends Stack {
       ["/conversations/{conversationId}/messages/{messageId}/cancel", apigwv2.HttpMethod.POST],
     ];
     for (const [routePath, method] of authenticatedRoutes) {
-      this.api.addRoutes({ path: routePath, methods: [method], integration, authorizer: jwtAuthorizer });
+      this.api.addRoutes({
+        path: routePath,
+        methods: [method],
+        integration,
+        authorizer: jwtAuthorizer,
+      });
     }
 
     new cloudwatch.Dashboard(this, "Dashboard", {

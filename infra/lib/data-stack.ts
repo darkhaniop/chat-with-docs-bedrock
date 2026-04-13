@@ -52,10 +52,7 @@ export class CwdDataStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
       cors: [
         {
-          allowedOrigins: [
-            `https://${props.webDistributionDomainName}`,
-            "http://localhost:5173",
-          ],
+          allowedOrigins: [`https://${props.webDistributionDomainName}`, "http://localhost:5173"],
           allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET],
           allowedHeaders: ["Content-Type"],
         },

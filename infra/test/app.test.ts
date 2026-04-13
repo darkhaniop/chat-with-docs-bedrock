@@ -3,6 +3,7 @@ import { App } from "aws-cdk-lib";
 import { CwdAuthStack } from "../lib/auth-stack";
 import { CwdComputeStack } from "../lib/compute-stack";
 import { CwdDataStack } from "../lib/data-stack";
+import { CwdRealtimeStack } from "../lib/realtime-stack";
 import { CwdWebStack } from "../lib/web-stack";
 import { stackName } from "../lib/naming";
 
@@ -31,6 +32,12 @@ describe("the full app", () => {
       env: cdkEnv,
       webDistributionDomainName: webStack.distribution.domainName,
     });
+    const realtimeStack = new CwdRealtimeStack(app, stackName(env2, "Realtime"), {
+      env2,
+      env: cdkEnv,
+      userPool: authStack.userPool,
+      table: dataStack.table,
+    });
     new CwdComputeStack(app, stackName(env2, "Compute"), {
       env2,
       env: cdkEnv,
@@ -40,6 +47,7 @@ describe("the full app", () => {
       table: dataStack.table,
       documentsBucket: dataStack.documentsBucket,
       vectorBucket: dataStack.vectorBucket,
+      eventsApi: realtimeStack.eventApi,
     });
 
     expect(() => app.synth()).not.toThrow();

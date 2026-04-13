@@ -20,6 +20,34 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
     },
   },
   "Resources": {
+    "AnswerQueue06E730E0": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "QueueName": "cwd-dev-answer-queue",
+        "RedrivePolicy": {
+          "deadLetterTargetArn": {
+            "Fn::GetAtt": [
+              "AnswerQueueDlqE42E0785",
+              "Arn",
+            ],
+          },
+          "maxReceiveCount": 2,
+        },
+        "VisibilityTimeout": 300,
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "AnswerQueueDlqE42E0785": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "QueueName": "cwd-dev-answer-queue-dlq",
+        "VisibilityTimeout": 120,
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
     "AnsweringFunctionF7117222": {
       "DependsOn": [
         "AnsweringFunctionServiceRoleDefaultPolicy4B4673A3",
@@ -31,7 +59,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:45fb1686fff029598b7779590eaaeaf0796e354fd0a1dcf408d22ff5243b0233",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:fa9e5119b31c84b7a4ac505f7e038e31c61cf189a33c95a07cd11d8f1b290d64",
           },
         },
         "Environment": {
@@ -41,6 +69,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
             "CWD_VERSION": "0.1.0",
           },
@@ -72,6 +103,22 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
       "Properties": {
         "PolicyDocument": {
           "Statement": [
+            {
+              "Action": [
+                "sqs:ReceiveMessage",
+                "sqs:ChangeMessageVisibility",
+                "sqs:GetQueueUrl",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "AnswerQueue06E730E0",
+                  "Arn",
+                ],
+              },
+            },
             {
               "Action": [
                 "dynamodb:BatchGetItem",
@@ -176,6 +223,26 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Effect": "Allow",
               "Resource": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
             },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -219,6 +286,21 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
       },
       "Type": "AWS::IAM::Role",
     },
+    "AnsweringFunctionSqsEventSourceTestComputeStackAnswerQueue3461FDBA26003FA5": {
+      "Properties": {
+        "BatchSize": 1,
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "AnswerQueue06E730E0",
+            "Arn",
+          ],
+        },
+        "FunctionName": {
+          "Ref": "AnsweringFunctionF7117222",
+        },
+      },
+      "Type": "AWS::Lambda::EventSourceMapping",
+    },
     "AnsweringLogGroup8F61C13F": {
       "DeletionPolicy": "Delete",
       "Properties": {
@@ -239,19 +321,22 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:4660823aabd3722400ec1660c129dac980ba31e8d1e6479f32e726222b47213e",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:7dc16a344abdcc43f4e8e902a44a78b0c66ce2c21bb731a7428b7ae0a309afc7",
           },
         },
         "Environment": {
           "Variables": {
-            "CWD_ANSWERING_FUNCTION_NAME": {
-              "Ref": "AnsweringFunctionF7117222",
+            "CWD_ANSWER_QUEUE_URL": {
+              "Ref": "AnswerQueue06E730E0",
             },
             "CWD_COMMIT": "<commit-sha>",
             "CWD_DOCUMENTS_BUCKET_NAME": {
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_INGESTION_STATE_MACHINE_ARN": {
               "Ref": "IngestionPipelineStateMachineAA924511",
             },
@@ -475,30 +560,18 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               },
             },
             {
-              "Action": "lambda:InvokeFunction",
-              "Effect": "Allow",
-              "Resource": [
-                {
-                  "Fn::GetAtt": [
-                    "AnsweringFunctionF7117222",
-                    "Arn",
-                  ],
-                },
-                {
-                  "Fn::Join": [
-                    "",
-                    [
-                      {
-                        "Fn::GetAtt": [
-                          "AnsweringFunctionF7117222",
-                          "Arn",
-                        ],
-                      },
-                      ":*",
-                    ],
-                  ],
-                },
+              "Action": [
+                "sqs:SendMessage",
+                "sqs:GetQueueAttributes",
+                "sqs:GetQueueUrl",
               ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "AnswerQueue06E730E0",
+                  "Arn",
+                ],
+              },
             },
           ],
           "Version": "2012-10-17",
@@ -554,6 +627,192 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         "DashboardName": "cwd-dev",
       },
       "Type": "AWS::CloudWatch::Dashboard",
+    },
+    "DlqHandlerFunctionF635FEC1": {
+      "DependsOn": [
+        "DlqHandlerFunctionServiceRoleDefaultPolicy98F34BA4",
+        "DlqHandlerFunctionServiceRoleAAFF790A",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:7dc16a344abdcc43f4e8e902a44a78b0c66ce2c21bb731a7428b7ae0a309afc7",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_COMMIT": "<commit-sha>",
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
+            "CWD_VERSION": "0.1.0",
+          },
+        },
+        "FunctionName": "cwd-dev-answering-dlq-handler",
+        "ImageConfig": {
+          "Command": [
+            "api.dlq_handler.lambda_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "DlqHandlerLogGroup220F37E9",
+          },
+        },
+        "MemorySize": 512,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "DlqHandlerFunctionServiceRoleAAFF790A",
+            "Arn",
+          ],
+        },
+        "Timeout": 60,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "DlqHandlerFunctionServiceRoleAAFF790A": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "DlqHandlerFunctionServiceRoleDefaultPolicy98F34BA4": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "sqs:ReceiveMessage",
+                "sqs:ChangeMessageVisibility",
+                "sqs:GetQueueUrl",
+                "sqs:DeleteMessage",
+                "sqs:GetQueueAttributes",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "AnswerQueueDlqE42E0785",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "DlqHandlerFunctionServiceRoleDefaultPolicy98F34BA4",
+        "Roles": [
+          {
+            "Ref": "DlqHandlerFunctionServiceRoleAAFF790A",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "DlqHandlerFunctionSqsEventSourceTestComputeStackAnswerQueueDlq49D3E8A695165CFD": {
+      "Properties": {
+        "BatchSize": 1,
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "AnswerQueueDlqE42E0785",
+            "Arn",
+          ],
+        },
+        "FunctionName": {
+          "Ref": "DlqHandlerFunctionF635FEC1",
+        },
+      },
+      "Type": "AWS::Lambda::EventSourceMapping",
+    },
+    "DlqHandlerLogGroup220F37E9": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-answering-dlq-handler",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
     },
     "HttpApiDELETEconversationsconversationId2C9EBE2C": {
       "Properties": {
@@ -2140,7 +2399,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:6cc9e6a3ecff811d109a99bc3d4874054a23c2881f9530b06b2322d9f51af5e0",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:113bc719d4fca482742031f3246b1f568bf7df5d2794852b7eb852992f0ff40d",
           },
         },
         "Environment": {
@@ -2149,6 +2408,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
@@ -2297,6 +2559,26 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
                 },
               ],
             },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -2329,7 +2611,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:6cc9e6a3ecff811d109a99bc3d4874054a23c2881f9530b06b2322d9f51af5e0",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:113bc719d4fca482742031f3246b1f568bf7df5d2794852b7eb852992f0ff40d",
           },
         },
         "Environment": {
@@ -2338,6 +2620,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
@@ -2483,6 +2768,26 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Effect": "Allow",
               "Resource": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-multimodal-embeddings-v1:0",
             },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -2515,7 +2820,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:6cc9e6a3ecff811d109a99bc3d4874054a23c2881f9530b06b2322d9f51af5e0",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:113bc719d4fca482742031f3246b1f568bf7df5d2794852b7eb852992f0ff40d",
           },
         },
         "Environment": {
@@ -2524,6 +2829,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
@@ -2672,7 +2980,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:6cc9e6a3ecff811d109a99bc3d4874054a23c2881f9530b06b2322d9f51af5e0",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:113bc719d4fca482742031f3246b1f568bf7df5d2794852b7eb852992f0ff40d",
           },
         },
         "Environment": {
@@ -2681,6 +2989,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
@@ -2746,6 +3057,26 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
                 "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
               },
             },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -2809,7 +3140,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:6cc9e6a3ecff811d109a99bc3d4874054a23c2881f9530b06b2322d9f51af5e0",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:113bc719d4fca482742031f3246b1f568bf7df5d2794852b7eb852992f0ff40d",
           },
         },
         "Environment": {
@@ -2818,6 +3149,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
@@ -3005,6 +3339,26 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Effect": "Allow",
               "Resource": "*",
             },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -3037,7 +3391,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:6cc9e6a3ecff811d109a99bc3d4874054a23c2881f9530b06b2322d9f51af5e0",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:113bc719d4fca482742031f3246b1f568bf7df5d2794852b7eb852992f0ff40d",
           },
         },
         "Environment": {
@@ -3046,6 +3400,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
@@ -3163,6 +3520,26 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
                 },
               ],
             },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -3226,7 +3603,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:6cc9e6a3ecff811d109a99bc3d4874054a23c2881f9530b06b2322d9f51af5e0",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:113bc719d4fca482742031f3246b1f568bf7df5d2794852b7eb852992f0ff40d",
           },
         },
         "Environment": {
@@ -3235,6 +3612,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
           },
         },
@@ -3331,6 +3711,26 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
                 "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
               },
             },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
           ],
           "Version": "2012-10-17",
         },
@@ -3352,6 +3752,198 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
       "Type": "AWS::Logs::LogGroup",
       "UpdateReplacePolicy": "Delete",
     },
+    "MessageSweeperFunctionCA933ECD": {
+      "DependsOn": [
+        "MessageSweeperFunctionServiceRoleDefaultPolicyD27A37F4",
+        "MessageSweeperFunctionServiceRole31EE97B5",
+      ],
+      "Properties": {
+        "Architectures": [
+          "x86_64",
+        ],
+        "Code": {
+          "ImageUri": {
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:7dc16a344abdcc43f4e8e902a44a78b0c66ce2c21bb731a7428b7ae0a309afc7",
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "CWD_COMMIT": "<commit-sha>",
+            "CWD_DOCUMENTS_BUCKET_NAME": {
+              "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
+            },
+            "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
+            "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
+            "CWD_VERSION": "0.1.0",
+          },
+        },
+        "FunctionName": "cwd-dev-message-sweeper",
+        "ImageConfig": {
+          "Command": [
+            "api.message_sweeper.lambda_handler",
+          ],
+        },
+        "LoggingConfig": {
+          "LogGroup": {
+            "Ref": "MessageSweeperLogGroupDC91F461",
+          },
+        },
+        "MemorySize": 512,
+        "PackageType": "Image",
+        "Role": {
+          "Fn::GetAtt": [
+            "MessageSweeperFunctionServiceRole31EE97B5",
+            "Arn",
+          ],
+        },
+        "Timeout": 300,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "MessageSweeperFunctionServiceRole31EE97B5": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "MessageSweeperFunctionServiceRoleDefaultPolicyD27A37F4": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "dynamodb:BatchGetItem",
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:Scan",
+                "dynamodb:ConditionCheckItem",
+                "dynamodb:BatchWriteItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:DescribeTable",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+              ],
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::ImportValue": "TestDataStack:ExportsOutputFnGetAttTableCD117FA1ArnE2C8C204",
+              },
+            },
+            {
+              "Action": "appsync:EventPublish",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:",
+                    {
+                      "Ref": "AWS::Partition",
+                    },
+                    ":appsync:us-east-1:123456789012:apis/",
+                    {
+                      "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0ApiIdFBA909F4",
+                    },
+                    "/channelNamespace/*",
+                  ],
+                ],
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "MessageSweeperFunctionServiceRoleDefaultPolicyD27A37F4",
+        "Roles": [
+          {
+            "Ref": "MessageSweeperFunctionServiceRole31EE97B5",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "MessageSweeperLogGroupDC91F461": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/cwd-dev-message-sweeper",
+        "RetentionInDays": 30,
+      },
+      "Type": "AWS::Logs::LogGroup",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "MessageSweeperScheduleAllowEventRuleTestComputeStackMessageSweeperFunction33613FE882ECA72B": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "MessageSweeperFunctionCA933ECD",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "MessageSweeperScheduleF268FB63",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "MessageSweeperScheduleF268FB63": {
+      "Properties": {
+        "ScheduleExpression": "rate(5 minutes)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "MessageSweeperFunctionCA933ECD",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
     "SweeperFunctionB5F2624B": {
       "DependsOn": [
         "SweeperFunctionServiceRoleDefaultPolicyD5F37340",
@@ -3363,7 +3955,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:4660823aabd3722400ec1660c129dac980ba31e8d1e6479f32e726222b47213e",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:7dc16a344abdcc43f4e8e902a44a78b0c66ce2c21bb731a7428b7ae0a309afc7",
           },
         },
         "Environment": {
@@ -3373,6 +3965,9 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
               "Fn::ImportValue": "TestDataStack:ExportsOutputRefDocumentsBucket9EC9DEB9131399C0",
             },
             "CWD_ENV": "dev",
+            "CWD_EVENTS_HTTP_DOMAIN": {
+              "Fn::ImportValue": "TestEventsStack:ExportsOutputFnGetAttEventApiE141E6C0DnsHttp69EA43D9",
+            },
             "CWD_VECTOR_BUCKET_NAME": "cwd-vectors-dev-123456789012",
             "CWD_VERSION": "0.1.0",
           },

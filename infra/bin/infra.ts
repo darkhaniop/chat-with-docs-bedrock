@@ -6,6 +6,7 @@ import { App } from "aws-cdk-lib";
 import { CwdAuthStack } from "../lib/auth-stack";
 import { CwdComputeStack } from "../lib/compute-stack";
 import { CwdDataStack } from "../lib/data-stack";
+import { CwdRealtimeStack } from "../lib/realtime-stack";
 import { CwdWebStack } from "../lib/web-stack";
 import { stackName } from "../lib/naming";
 
@@ -50,6 +51,16 @@ const authStack = new CwdAuthStack(app, stackName(env2, "Auth"), {
   webDistributionDomainName: webStack.distribution.domainName,
 });
 
+// Depends only on Data (the onSubscribe authorizer reads ownerSub) and Auth (the user pool backs
+// subscribe/connect auth) — deliberately not Compute, so Compute can depend on *this* stack's
+// `eventApi` (env vars + publish grants) without a cycle. See CwdRealtimeStack's own docstring.
+const realtimeStack = new CwdRealtimeStack(app, stackName(env2, "Realtime"), {
+  env2,
+  env: cdkEnv,
+  userPool: authStack.userPool,
+  table: dataStack.table,
+});
+
 new CwdComputeStack(app, stackName(env2, "Compute"), {
   env2,
   env: cdkEnv,
@@ -59,4 +70,5 @@ new CwdComputeStack(app, stackName(env2, "Compute"), {
   table: dataStack.table,
   documentsBucket: dataStack.documentsBucket,
   vectorBucket: dataStack.vectorBucket,
+  eventsApi: realtimeStack.eventApi,
 });

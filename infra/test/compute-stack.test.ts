@@ -1,10 +1,26 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { App } from "aws-cdk-lib";
+import { App, Stack } from "aws-cdk-lib";
+import * as appsync from "aws-cdk-lib/aws-appsync";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { CwdComputeStack } from "../lib/compute-stack";
 import { CwdDataStack } from "../lib/data-stack";
+
+/**
+ * A minimal standalone `EventApi`. This file only needs *something* satisfying `IEventApi` for
+ * `CwdComputeStack`'s cross-stack `grantPublish`/`httpDns` references to resolve.
+ */
+function testEventsApi(app: App, cdkEnv: { account: string; region: string }): appsync.IEventApi {
+  const eventsStack = new Stack(app, "TestEventsStack", { env: cdkEnv });
+  return new appsync.EventApi(eventsStack, "EventApi", {
+    apiName: "test-events",
+    authorizationConfig: {
+      authProviders: [{ authorizationType: appsync.AppSyncAuthorizationType.IAM }],
+      defaultPublishAuthModeTypes: [appsync.AppSyncAuthorizationType.IAM],
+    },
+  });
+}
 
 // Building `CwdComputeStack` stages a Docker build-context asset (services/Dockerfile +
 // repo root), which is expensive relative to a plain CFN synth. Build it exactly once and
@@ -31,6 +47,7 @@ beforeAll(() => {
     table: dataStack.table,
     documentsBucket: dataStack.documentsBucket,
     vectorBucket: dataStack.vectorBucket,
+    eventsApi: testEventsApi(app, cdkEnv),
   });
   template = Template.fromStack(stack);
 });
@@ -97,9 +114,9 @@ describe("CwdComputeStack", () => {
     });
   });
 
-  it("gives every Lambda function (api, sweeper, answering, and the seven ingestion functions) its own distinct role", () => {
+  it("gives every Lambda function its own distinct role", () => {
     const roles = template.findResources("AWS::IAM::Role");
-    expect(Object.keys(roles)).toHaveLength(11);
+    expect(Object.keys(roles)).toHaveLength(13);
   });
 
   it("only ingest-embed-and-index and answering have Bedrock permission, never wildcarded", () => {
@@ -162,7 +179,7 @@ describe("CwdComputeStack", () => {
     expect(novaStatements[0]?.Action).toBe("bedrock:InvokeModel");
   });
 
-  it("grants the api function lambda:InvokeFunction scoped to the answering function only", () => {
+  it("grants the api function sqs:SendMessage on the answer queue, never lambda:InvokeFunction on answering", () => {
     const apiPolicy = template.findResources("AWS::IAM::Policy", {
       Properties: { PolicyName: Match.stringLikeRegexp("^ApiFunctionServiceRoleDefaultPolicy") },
     });
@@ -172,10 +189,14 @@ describe("CwdComputeStack", () => {
     const invokeStatements = statements.filter((s) =>
       JSON.stringify(s.Action ?? "").includes("lambda:InvokeFunction"),
     );
-    expect(invokeStatements).toHaveLength(1);
-    const resources = JSON.stringify(invokeStatements[0]?.Resource);
+    expect(invokeStatements).toHaveLength(0);
+    const sendMessageStatements = statements.filter((s) =>
+      JSON.stringify(s.Action ?? "").includes("sqs:SendMessage"),
+    );
+    expect(sendMessageStatements).toHaveLength(1);
+    const resources = JSON.stringify(sendMessageStatements[0]?.Resource);
     expect(resources).not.toBe('"*"');
-    expect(resources).toContain("AnsweringFunction");
+    expect(resources).toContain("AnswerQueue");
   });
 
   it("scopes the answering function's s3vectors grant to QueryVectors+GetVectors only, never wildcarded", () => {
@@ -251,7 +272,9 @@ describe("CwdComputeStack", () => {
   it("grants the ingest-page function read/write on artifacts/* (blocks) in addition to pages/*", () => {
     const pagePolicy = template.findResources("AWS::IAM::Policy", {
       Properties: {
-        PolicyName: Match.stringLikeRegexp("^IngestionPipelineingestpageFunctionServiceRoleDefaultPolicy"),
+        PolicyName: Match.stringLikeRegexp(
+          "^IngestionPipelineingestpageFunctionServiceRoleDefaultPolicy",
+        ),
       },
     });
     const statements = Object.values(pagePolicy).flatMap(

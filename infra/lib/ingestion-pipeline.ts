@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import type * as appsync from "aws-cdk-lib/aws-appsync";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as ecrAssets from "aws-cdk-lib/aws-ecr-assets";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -18,6 +19,10 @@ export interface IngestionPipelineProps {
   readonly table: dynamodb.ITableV2;
   readonly documentsBucket: s3.IBucket;
   readonly vectorBucket: s3vectors.CfnVectorBucket;
+  /** `CwdRealtimeStack`'s Events API — threaded down from `CwdComputeStack` so the six
+   * publishing Lambdas below (all but `ensure-index`) get `appsync:EventPublish` and the
+   * `CWD_EVENTS_HTTP_DOMAIN` env var `common.events.AppSyncEventsPublisher` already reads. */
+  readonly eventsApi: appsync.IEventApi;
 }
 
 // services/common/common/config.py's `Settings.nova_model_id` default — kept in sync by hand,
@@ -87,9 +92,14 @@ export class IngestionPipeline extends Construct {
       CWD_ENV: props.env2,
       CWD_DOCUMENTS_BUCKET_NAME: props.documentsBucket.bucketName,
       CWD_VECTOR_BUCKET_NAME: props.vectorBucket.vectorBucketName as string,
+      CWD_EVENTS_HTTP_DOMAIN: props.eventsApi.httpDns,
     };
 
-    const makeFunction = (name: string, cmd: string, memoryMb: number): lambda.DockerImageFunction => {
+    const makeFunction = (
+      name: string,
+      cmd: string,
+      memoryMb: number,
+    ): lambda.DockerImageFunction => {
       const logGroup = new logs.LogGroup(this, `${name}LogGroup`, {
         logGroupName: `/aws/lambda/cwd-${props.env2}-${name}`,
         retention: logs.RetentionDays.ONE_MONTH,
@@ -119,6 +129,7 @@ export class IngestionPipeline extends Construct {
     this.probeFunction = makeFunction("ingest-probe", "ingestion.handlers.probe_handler", 1024);
     props.documentsBucket.grantRead(this.probeFunction, "raw/*");
     props.documentsBucket.grantWrite(this.probeFunction, "artifacts/*");
+    props.eventsApi.grantPublish(this.probeFunction);
 
     // docs/03-ingestion.md#step-2--processpages: downloads raw/, writes pages/ + artifacts/
     // blocks/, calls Textract. 2048 MB: PyMuPDF rendering is the most memory-hungry step.
@@ -135,12 +146,14 @@ export class IngestionPipeline extends Construct {
         resources: ["*"],
       }),
     );
+    props.eventsApi.grantPublish(this.pageFunction);
 
     // docs/03-ingestion.md#step-3--chunk: reads artifacts/blocks/*, writes Chunk items and
     // artifacts/chunks.jsonl.
     this.chunkFunction = makeFunction("ingest-chunk", "ingestion.handlers.chunk_handler", 1024);
     props.documentsBucket.grantRead(this.chunkFunction, "artifacts/*");
     props.documentsBucket.grantWrite(this.chunkFunction, "artifacts/*");
+    props.eventsApi.grantPublish(this.chunkFunction);
 
     // docs/07-security.md#iam: `ingest-*` gets `s3vectors:*` scoped to the environment's vector
     // bucket (and every index inside it) — a broad action wildcard is fine here because it's
@@ -180,12 +193,23 @@ export class IngestionPipeline extends Construct {
         resources: [novaModelArn],
       }),
     );
+    props.eventsApi.grantPublish(this.embedAndIndexFunction);
 
     // docs/03-ingestion.md#step-6--finalize: Document/Project updates only, no S3 access.
-    this.finalizeFunction = makeFunction("ingest-finalize", "ingestion.handlers.finalize_handler", 512);
+    this.finalizeFunction = makeFunction(
+      "ingest-finalize",
+      "ingestion.handlers.finalize_handler",
+      512,
+    );
+    props.eventsApi.grantPublish(this.finalizeFunction);
 
     // docs/03-ingestion.md#failure-handling--markfailed: Document status update only.
-    this.markFailedFunction = makeFunction("mark-failed", "ingestion.handlers.mark_failed_handler", 512);
+    this.markFailedFunction = makeFunction(
+      "mark-failed",
+      "ingestion.handlers.mark_failed_handler",
+      512,
+    );
+    props.eventsApi.grantPublish(this.markFailedFunction);
 
     // -- state machine -------------------------------------------------------------------------
 
