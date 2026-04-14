@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiJson } from "../client";
 import type { CreateDocumentResponse, Document, Page } from "../types";
 
-function documentsKey(projectId: string) {
+export function documentsKey(projectId: string) {
   return ["projects", projectId, "documents"] as const;
 }
 

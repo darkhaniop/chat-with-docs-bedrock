@@ -1,25 +1,82 @@
-import { useState } from "react";
-import { useActiveConversation, useMessages, usePostMessage } from "../../api/hooks/conversations";
+import { useEffect, useState } from "react";
+import {
+  useActiveConversation,
+  useCancelMessage,
+  useMessages,
+  usePostMessage,
+} from "../../api/hooks/conversations";
 import { ApiError } from "../../api/errors";
+import { initialStreamState, streamReducer, type StreamState } from "../../realtime/streamReducer";
+import { useChannelConnected, useChannelSubscription } from "../../realtime/useChannel";
 import { Composer } from "./Composer";
 import { MessageText } from "./MessageText";
 
 const STATUS_LABEL: Record<string, string> = {
   BLOCKED: "Blocked by content safety",
   FAILED: "Failed to generate a response",
+  CANCELLED: "Cancelled",
 };
+
+const STREAM_STATUS_LABEL: Record<string, string> = {
+  starting: "Sending…",
+  retrieving: "Searching documents…",
+  thinking: "Thinking…",
+};
+
+// docs/06-frontend.md#reconnection-and-reconciliation: "If a message is STREAMING in the
+// fetched record but no events are arriving, the UI polls that conversation every 3s until it
+// is terminal, capped at 5 minutes."
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 5 * 60 * 1000;
+const TERMINAL_STREAM_STATUSES = new Set(["done", "blocked", "failed"]);
 
 export function ChatPane({ projectId }: { projectId: string }) {
   const { conversation, isLoading, ensureConversation } = useActiveConversation(projectId);
-  const { data: messages } = useMessages(conversation?.conversationId ?? null);
+  const conversationId = conversation?.conversationId ?? null;
+  const { data: messages, refetch } = useMessages(conversationId);
   const postMessage = usePostMessage();
+  const cancelMessage = useCancelMessage(conversationId ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [stream, setStream] = useState<StreamState | null>(null);
+  const isConnected = useChannelConnected();
+
+  // docs/06: "the client should subscribe to the channel before posting where possible" — kept
+  // open for the conversation's whole lifetime rather than only during a turn, so it already is
+  // by the time a post happens.
+  const channel = conversationId !== null ? `/conversations/${conversationId}` : null;
+  useChannelSubscription(channel, (envelope) => {
+    setStream((prev) => (prev !== null ? streamReducer(prev, envelope) : prev));
+  });
+
+  // The streamed text/citations are a preview only — once the turn reaches a terminal state,
+  // `GET .../messages` is the authoritative record (docs/06-frontend.md#chat-and-streaming).
+  useEffect(() => {
+    if (stream !== null && TERMINAL_STREAM_STATUSES.has(stream.status)) {
+      void refetch().then(() => setStream(null));
+    }
+  }, [stream, refetch]);
+
+  useEffect(() => {
+    if (stream === null || TERMINAL_STREAM_STATUSES.has(stream.status)) return;
+    if (isConnected()) return;
+    const start = Date.now();
+    const interval = setInterval(() => {
+      if (Date.now() - start > POLL_TIMEOUT_MS) {
+        clearInterval(interval);
+        return;
+      }
+      void refetch();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-armed on status change only
+  }, [stream?.messageId, stream?.status]);
 
   const handleSend = async (text: string) => {
     setError(null);
     try {
       const active = await ensureConversation();
-      await postMessage.mutateAsync({ conversationId: active.conversationId, text });
+      const result = await postMessage.mutateAsync({ conversationId: active.conversationId, text });
+      setStream(initialStreamState(result.assistantMessageId));
     } catch (caught) {
       setError(
         caught instanceof ApiError ? caught.message : "Something went wrong sending that message.",
@@ -27,13 +84,17 @@ export function ChatPane({ projectId }: { projectId: string }) {
     }
   };
 
+  const isBusy = stream !== null && !TERMINAL_STREAM_STATUSES.has(stream.status);
+
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex-1 overflow-y-auto p-3">
         {isLoading && <p className="text-sm text-slate-500">Loading conversation…</p>}
-        {!isLoading && (messages === undefined || messages.items.length === 0) && (
-          <p className="text-sm text-slate-500">Ask a question about this project's documents.</p>
-        )}
+        {!isLoading &&
+          (messages === undefined || messages.items.length === 0) &&
+          stream === null && (
+            <p className="text-sm text-slate-500">Ask a question about this project's documents.</p>
+          )}
         <ul className="flex flex-col gap-3">
           {messages?.items.map((message) => (
             <li
@@ -44,7 +105,7 @@ export function ChatPane({ projectId }: { projectId: string }) {
                   : "rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900"
               }
             >
-              {message.status === "BLOCKED" || message.status === "FAILED" ? (
+              {message.status in STATUS_LABEL ? (
                 <span className="text-red-700">
                   {STATUS_LABEL[message.status]}
                   {message.text ? `: ${message.text}` : ""}
@@ -54,10 +115,27 @@ export function ChatPane({ projectId }: { projectId: string }) {
               )}
             </li>
           ))}
+          {isBusy && stream !== null && (
+            <li className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900">
+              {stream.text.length > 0 ? (
+                <MessageText text={stream.text} citations={stream.citations} />
+              ) : (
+                <span className="text-slate-500">
+                  {STREAM_STATUS_LABEL[stream.status] ?? "Working…"}
+                </span>
+              )}
+            </li>
+          )}
         </ul>
         {error !== null && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </div>
-      <Composer disabled={postMessage.isPending} onSend={(text) => void handleSend(text)} />
+      <Composer
+        disabled={postMessage.isPending || isBusy}
+        onSend={(text) => void handleSend(text)}
+        onCancel={
+          isBusy && stream !== null ? () => cancelMessage.mutate(stream.messageId) : undefined
+        }
+      />
     </div>
   );
 }

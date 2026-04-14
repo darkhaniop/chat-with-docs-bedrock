@@ -15,6 +15,8 @@ export default defineConfig({
       VITE_COGNITO_DOMAIN: "cwd-dev-000000000000.auth.us-east-1.amazoncognito.com",
       VITE_COGNITO_CLIENT_ID: "test-client-id",
       VITE_API_BASE: "https://api.test.example.com",
+      VITE_EVENTS_REALTIME_DOMAIN: "events.test.example.com",
+      VITE_EVENTS_HTTP_DOMAIN: "events-http.test.example.com",
     },
   },
 });

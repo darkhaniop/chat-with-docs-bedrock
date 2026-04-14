@@ -6,9 +6,13 @@ const MAX_LENGTH = 8000; // docs/05-api-contracts.md: "Validates the text (1-800
 export function Composer({
   disabled,
   onSend,
+  onCancel,
 }: {
   disabled: boolean;
   onSend: (text: string) => void;
+  /** docs/06-frontend.md#chat-and-streaming: "shows a cancel button that calls `/cancel`" —
+   * present only while a turn is actually in flight. */
+  onCancel?: () => void;
 }) {
   const [text, setText] = useState("");
 
@@ -43,9 +47,15 @@ export function Composer({
           }
         }}
       />
-      <Button type="submit" disabled={disabled || text.trim().length === 0}>
-        Send
-      </Button>
+      {onCancel !== undefined ? (
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      ) : (
+        <Button type="submit" disabled={disabled || text.trim().length === 0}>
+          Send
+        </Button>
+      )}
     </form>
   );
 }

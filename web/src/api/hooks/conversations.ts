@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiJson } from "../client";
-import type { Conversation, Message, Page, PostMessageResponse } from "../types";
+import type { Conversation, Message, Page, PostMessageAccepted } from "../types";
 
 function conversationsKey(projectId: string) {
   return ["projects", projectId, "conversations"] as const;
 }
 
-function messagesKey(conversationId: string) {
+export function messagesKey(conversationId: string) {
   return ["conversations", conversationId, "messages"] as const;
 }
 
@@ -59,15 +59,24 @@ export function usePostMessage() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ conversationId, text }: { conversationId: string; text: string }) =>
-      apiJson<PostMessageResponse>(`/conversations/${conversationId}/messages`, {
+      apiJson<PostMessageAccepted>(`/conversations/${conversationId}/messages`, {
         method: "POST",
         body: JSON.stringify({ text }),
       }),
     onSuccess: (result, variables) => {
       queryClient.setQueryData<Page<Message>>(messagesKey(variables.conversationId), (current) => ({
-        items: [...(current?.items ?? []), result.userMessage, result.assistantMessage],
+        items: [...(current?.items ?? []), result.userMessage],
         nextCursor: current?.nextCursor ?? null,
       }));
     },
+  });
+}
+
+export function useCancelMessage(conversationId: string) {
+  return useMutation({
+    mutationFn: (messageId: string) =>
+      apiJson<{ status: string }>(`/conversations/${conversationId}/messages/${messageId}/cancel`, {
+        method: "POST",
+      }),
   });
 }

@@ -98,7 +98,7 @@ export interface Usage {
 }
 
 export type MessageRole = "user" | "assistant";
-export type MessageStatus = "COMPLETE" | "STREAMING" | "FAILED" | "BLOCKED";
+export type MessageStatus = "COMPLETE" | "STREAMING" | "FAILED" | "BLOCKED" | "CANCELLED";
 
 export interface Message {
   messageId: string;
@@ -112,7 +112,11 @@ export interface Message {
   createdAt: string;
 }
 
-export interface PostMessageResponse {
+/** docs/05-api-contracts.md#conversations-and-messages: `POST .../messages`'s `202` response —
+ * a placeholder to subscribe against, not a resolved message (Phase 6's documented steady
+ * state; Phase 5's synchronous `{userMessage, assistantMessage}` stand-in is gone). */
+export interface PostMessageAccepted {
   userMessage: Message;
-  assistantMessage: Message;
+  assistantMessageId: string;
+  channel: string;
 }

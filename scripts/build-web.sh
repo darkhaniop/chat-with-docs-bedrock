@@ -24,6 +24,7 @@ fi
 env_title="$(tr '[:lower:]' '[:upper:]' <<<"${ENV:0:1}")${ENV:1}"
 auth_stack="Cwd${env_title}AuthStack"
 compute_stack="Cwd${env_title}ComputeStack"
+realtime_stack="Cwd${env_title}RealtimeStack"
 
 get_output() {
   local stack="$1" key="$2"
@@ -37,6 +38,8 @@ user_pool_issuer=$(get_output "$auth_stack" "UserPoolIssuer")
 user_pool_domain_url=$(get_output "$auth_stack" "UserPoolDomainUrl")
 user_pool_client_id=$(get_output "$auth_stack" "UserPoolClientId")
 api_base_url=$(get_output "$compute_stack" "ApiBaseUrl")
+events_realtime_domain=$(get_output "$realtime_stack" "EventsRealtimeDomain")
+events_http_domain=$(get_output "$realtime_stack" "EventsHttpDomain")
 cognito_domain="${user_pool_domain_url#https://}"
 
 cat >"$ENV_FILE" <<EOF
@@ -45,6 +48,8 @@ VITE_COGNITO_AUTHORITY=${user_pool_issuer}
 VITE_COGNITO_DOMAIN=${cognito_domain}
 VITE_COGNITO_CLIENT_ID=${user_pool_client_id}
 VITE_API_BASE=${api_base_url%/}
+VITE_EVENTS_REALTIME_DOMAIN=${events_realtime_domain}
+VITE_EVENTS_HTTP_DOMAIN=${events_http_domain}
 EOF
 
 echo "Wrote $ENV_FILE"
