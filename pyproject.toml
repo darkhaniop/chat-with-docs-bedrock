@@ -29,6 +29,7 @@ dev = [
     "pytest-asyncio>=0.25,<0.26",
     "pytest-cov>=6.0,<6.1",
     "moto[dynamodb,s3,sqs,stepfunctions]>=5.0,<6.0",
+    "httpx-ws>=0.8,<0.9",
 ]
 
 [tool.uv.workspace]

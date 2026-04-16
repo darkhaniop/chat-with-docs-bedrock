@@ -59,6 +59,35 @@ class CognitoConfig:
     api_base_url: str
 
 
+@dataclass(frozen=True)
+class EventsConfig:
+    """`CwdDevRealtimeStack`'s outputs (Phase 6) — a separate fixture from `CognitoConfig` so
+    tests that don't need the Events API (most of them) don't skip just because these two extra
+    env vars aren't set.
+
+        CWD_EVENTS_REALTIME_DOMAIN  e.g. abc123.appsync-realtime-api.us-east-1.amazonaws.com
+        CWD_EVENTS_HTTP_DOMAIN      e.g. abc123.appsync-api.us-east-1.amazonaws.com
+    """
+
+    realtime_domain: str
+    http_domain: str
+
+
+@pytest.fixture(scope="session")
+def events_config() -> EventsConfig:
+    missing = [
+        name
+        for name in ("CWD_EVENTS_REALTIME_DOMAIN", "CWD_EVENTS_HTTP_DOMAIN")
+        if not os.environ.get(name)
+    ]
+    if missing:
+        pytest.skip(f"integration test needs {', '.join(missing)} set (see conftest.py)")
+    return EventsConfig(
+        realtime_domain=os.environ["CWD_EVENTS_REALTIME_DOMAIN"],
+        http_domain=os.environ["CWD_EVENTS_HTTP_DOMAIN"],
+    )
+
+
 @pytest.fixture(scope="session")
 def cognito_config() -> CognitoConfig:
     missing = [

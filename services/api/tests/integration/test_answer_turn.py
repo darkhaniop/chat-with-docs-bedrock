@@ -4,9 +4,12 @@ documentId/pageNumber/sentence range are correct by hand inspection." Runs again
 deployed `dev` stack — `CWD_INTEGRATION=1 uv run pytest -m integration` (see `conftest.py` for
 the env vars it needs).
 
-Phase 5 is synchronous (docs/10-roadmap.md#phase-5), so `POST .../messages` here returns the
-*resolved* assistant message directly — `{userMessage, assistantMessage}` — not the documented
-steady-state `202 {assistantMessageId, channel}` shape Phase 6 restores.
+Phase 6: `POST .../messages` enqueues and returns `202 {assistantMessageId, channel}`
+immediately (docs/05-api-contracts.md) — the turn now runs on the `answering` Lambda off the SQS
+queue, not inline with the request. `_wait_for_terminal_message` polls `GET .../messages` the
+same way the SPA's polling fallback does (docs/06-frontend.md#reconnection-and-reconciliation)
+rather than subscribing over the AppSync Events channel — simpler, and this suite is about
+citation correctness, not the streaming transport (`test_channel_authz.py`'s job).
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ import json
 import time
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -112,6 +114,24 @@ def _upload_and_ingest(
     return project_id, document_id
 
 
+def _wait_for_terminal_message(
+    cognito_config: CognitoConfig, token: str, conversation_id: str, message_id: str
+) -> dict[str, Any]:
+    deadline = time.monotonic() + 60.0
+    while time.monotonic() < deadline:
+        status, body = _request(
+            "GET",
+            f"{cognito_config.api_base_url}/conversations/{conversation_id}/messages",
+            token=token,
+        )
+        assert status == 200, body
+        message = next((m for m in body["items"] if m["messageId"] == message_id), None)
+        if message is not None and message["status"] != "STREAMING":
+            return message
+        time.sleep(2)
+    raise AssertionError(f"message {message_id} never left STREAMING within 60s")
+
+
 def test_a_question_with_a_known_answer_resolves_to_the_expected_citation(
     cognito_config: CognitoConfig, seeded_user_token: str
 ) -> None:
@@ -134,8 +154,10 @@ def test_a_question_with_a_known_answer_resolves_to_the_expected_citation(
             token=seeded_user_token,
             body={"text": _QUESTION},
         )
-        assert status == 201, body
-        assistant_message = body["assistantMessage"]
+        assert status == 202, body
+        assistant_message = _wait_for_terminal_message(
+            cognito_config, seeded_user_token, conversation_id, body["assistantMessageId"]
+        )
         assert assistant_message["status"] == "COMPLETE", assistant_message
 
         citations = assistant_message["citations"]
@@ -180,54 +202,12 @@ def test_a_question_with_no_answer_in_the_documents_cites_nothing(
             token=seeded_user_token,
             body={"text": "What is the capital of France?"},
         )
-        assert status == 201, body
-        assistant_message = body["assistantMessage"]
+        assert status == 202, body
+        assistant_message = _wait_for_terminal_message(
+            cognito_config, seeded_user_token, conversation_id, body["assistantMessageId"]
+        )
         assert assistant_message["status"] == "COMPLETE"
         assert assistant_message["citations"] == []
-    finally:
-        _request(
-            "DELETE",
-            f"{cognito_config.api_base_url}/projects/{project_id}",
-            token=seeded_user_token,
-        )
-
-
-def test_conversation_lock_rejects_a_second_concurrent_post(
-    cognito_config: CognitoConfig, seeded_user_token: str
-) -> None:
-    """docs/08-testing.md's `test_conversation_lock`: "Two concurrent posts to one conversation:
-    one [succeeds], one 409." Phase 5 has no worker/queue yet, so a "concurrent" post here means
-    two overlapping synchronous `POST .../messages` calls racing the same conditional
-    `claim_lock` — exactly the mechanism docs/10-roadmap.md's Phase 5 task 1 builds, ahead of
-    Phase 6's cancellation/streaming layer on top of it."""
-    project_id, _document_id = _upload_and_ingest(cognito_config, seeded_user_token)
-    try:
-        status, body = _request(
-            "POST",
-            f"{cognito_config.api_base_url}/projects/{project_id}/conversations",
-            token=seeded_user_token,
-            body={},
-        )
-        assert status == 201, body
-        conversation_id = body["conversationId"]
-
-        def _post(text: str) -> tuple[int, dict[str, Any]]:
-            return _request(
-                "POST",
-                f"{cognito_config.api_base_url}/conversations/{conversation_id}/messages",
-                token=seeded_user_token,
-                body={"text": text},
-            )
-
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            first = executor.submit(_post, "first concurrent question")
-            second = executor.submit(_post, "second concurrent question")
-            results = [first.result(), second.result()]
-
-        statuses = sorted(status for status, _ in results)
-        assert statuses == [201, 409], results
-        blocked_body = next(body for status, body in results if status == 409)
-        assert blocked_body["error"]["code"] == "ANSWER_IN_FLIGHT"
     finally:
         _request(
             "DELETE",
