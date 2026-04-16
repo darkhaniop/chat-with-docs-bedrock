@@ -19,7 +19,7 @@ from PIL import Image
 
 from common.config import get_settings
 from common.models import Chunk, DocumentKind, Page, PageRenders, Sentence, TextSource
-from common.repo import new_id, now_iso
+from common.repo import NotFound, new_id, now_iso
 from common.storage import blocks_key, chunks_key, embed_render_key, probe_key, render_key
 from ingestion import deps
 from ingestion.chunk import ChunkDraft, assemble_chunks, segment_page_sentences
@@ -385,9 +385,18 @@ def finalize_handler(event: dict[str, Any], context: LambdaContext) -> dict[str,
     repo = deps.get_repo()
     events = deps.get_events()
 
-    repo.update_document(document_id, status="READY", status_detail=None, page_count=page_count)
-    repo.update_document_ingestion(
-        document_id, finished_at=now_iso(), ocr_pages=ocr_page_count, chunk_count=chunk_count
+    document = repo.get_document(document_id)
+    if document is None:
+        raise NotFound(document_id)
+    updated_ingestion = document.ingestion.model_copy(
+        update={"finished_at": now_iso(), "ocr_pages": ocr_page_count, "chunk_count": chunk_count}
+    )
+    repo.update_document(
+        document_id,
+        status="READY",
+        status_detail=None,
+        page_count=page_count,
+        ingestion=updated_ingestion,
     )
     repo.increment_chunk_count(project_id, by=chunk_count)
 
