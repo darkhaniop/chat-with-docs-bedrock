@@ -59,17 +59,30 @@ export function ChatPane({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (stream === null || TERMINAL_STREAM_STATUSES.has(stream.status)) return;
     if (isConnected()) return;
+    const messageId = stream.messageId;
     const start = Date.now();
     const interval = setInterval(() => {
       if (Date.now() - start > POLL_TIMEOUT_MS) {
         clearInterval(interval);
         return;
       }
-      void refetch();
+      // A refetch alone only refreshes the cache — if the channel never delivers
+      // `message.completed` (the disconnected case this poll exists for), nothing else ever
+      // inspects the result to notice the turn is actually done, and `stream` (and therefore
+      // the composer's disabled/Cancel state) would stay stuck forever. Found live via
+      // `e2e/tests/resilience.spec.ts`: a permanently broken socket meant `stream.status` never
+      // reached a terminal value through the reducer, even though the real answer had already
+      // resolved and was sitting in the refetched list the whole time.
+      void refetch().then((result) => {
+        const found = result.data?.items.find((m) => m.messageId === messageId);
+        if (found !== undefined && found.status !== "STREAMING") {
+          setStream(null);
+        }
+      });
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-armed on status change only
-  }, [stream?.messageId, stream?.status]);
+  }, [stream?.messageId, stream?.status, refetch, isConnected]);
 
   const handleSend = async (text: string) => {
     setError(null);

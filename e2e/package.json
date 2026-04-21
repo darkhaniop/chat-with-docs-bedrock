@@ -1,0 +1,14 @@
+{
+  "name": "@cwd/e2e",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Playwright end-to-end suite for chat-with-docs, run against a real deployed dev stack (docs/08-testing.md#end-to-end-tests).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^22.20.1",
+    "typescript": "^6.0.3"
+  }
+}
