@@ -1,0 +1,110 @@
+# Offline suite only — the same tiers `uv run cwd-check` runs. Integration and e2e need a real
+# deployed `dev` stack, real AWS credentials, and cost money per run; they stay a
+# human-triggered step against the dev stack.
+#
+# Runs on every push, every branch.
+
+stages:
+  - install
+  - test
+
+variables:
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm-cache"
+
+default:
+  interruptible: true
+
+.python_image: &python_image ghcr.io/astral-sh/uv:0.9.2-python3.12-bookworm-slim
+.node_image: &node_image node:22.23.2-bookworm-slim
+
+install:python:
+  stage: install
+  image: *python_image
+  cache:
+    key:
+      files: [uv.lock]
+    paths: [.uv-cache/]
+  script:
+    - uv sync --frozen
+  artifacts:
+    paths: [.venv/]
+    expire_in: 1 hour
+
+install:infra:
+  stage: install
+  image: *node_image
+  cache:
+    key:
+      files: [infra/package-lock.json]
+    paths: [.npm-cache/]
+  script:
+    - cd infra && npm ci
+  artifacts:
+    paths: [infra/node_modules/]
+    expire_in: 1 hour
+
+install:web:
+  stage: install
+  image: *node_image
+  cache:
+    key:
+      files: [web/package-lock.json]
+    paths: [.npm-cache/]
+  script:
+    - cd web && npm ci
+  artifacts:
+    paths: [web/node_modules/]
+    expire_in: 1 hour
+
+ruff-check:
+  stage: test
+  image: *python_image
+  needs: ["install:python"]
+  script:
+    - uv run ruff check .
+
+ruff-format:
+  stage: test
+  image: *python_image
+  needs: ["install:python"]
+  script:
+    - uv run ruff format --check .
+
+mypy:
+  stage: test
+  image: *python_image
+  needs: ["install:python"]
+  script:
+    - uv run mypy services/common
+
+pytest:
+  stage: test
+  image: *python_image
+  needs: ["install:python"]
+  script:
+    - uv run pytest
+
+infra-test:
+  stage: test
+  # Non-slim: CwdComputeStack shells out to `git rev-parse HEAD` at synth time for CWD_COMMIT —
+  # the jest suite asserts that value looks like a real commit sha, so git must actually be on
+  # PATH and the .git checkout must be present (both true here: this image includes git, and
+  # GitLab's default clone strategy keeps .git). The "slim" variant used everywhere else lacks
+  # git.
+  image: node:22.23.2-bookworm
+  needs: ["install:infra"]
+  before_script:
+    # Without this, `git rev-parse HEAD` fails with "detected dubious ownership in repository"
+    # the moment git runs as a different user than whoever owns the checkout — true by default
+    # for a fresh clone in a CI container. Confirmed live against this exact image.
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+  script:
+    - cd infra && npm test
+
+web-test:
+  stage: test
+  image: *node_image
+  needs: ["install:web"]
+  script:
+    - cd web && npm test

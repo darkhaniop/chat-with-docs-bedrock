@@ -1,23 +1,11 @@
 # Build context is the repo root (services/Dockerfile COPYs services/* alongside the root lock
-# files), but the image only ever needs `pyproject.toml`, `uv.lock`, and `services/`. Denylist
-# every other top-level entry explicitly.
-README.md
-.dockerignore
-docs/
-e2e/
-.editorconfig
-.git/
-.gitignore
-infra/
-.mypy_cache/
-.npmrc
-.prettierrc.json
-.pytest_cache/
-.ruff_cache/
-scripts/
-.venv/
-web/
+# files), but the image only ever needs `pyproject.toml`, `uv.lock`, and `services/`.
+**
+!pyproject.toml
+!uv.lock
+!services
+!services/**
 
-# Python cruft that can appear under services/ too.
-**/__pycache__/
+# Python cruft that can appear under services/ too, re-excluded after the blanket re-allow above.
+**/__pycache__
 **/*.pyc
