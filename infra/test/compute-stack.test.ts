@@ -72,7 +72,7 @@ describe("CwdComputeStack", () => {
     const nonHealthRoutes = Object.values(routes).filter(
       (r) => r.Properties.RouteKey !== "GET /health",
     );
-    expect(nonHealthRoutes).toHaveLength(20);
+    expect(nonHealthRoutes).toHaveLength(21);
     for (const route of nonHealthRoutes) {
       expect(route.Properties.AuthorizationType).toBe("JWT");
       expect(route.Properties.AuthorizerId).toBeDefined();
@@ -86,6 +86,7 @@ describe("CwdComputeStack", () => {
         "GET /projects/{projectId}",
         "GET /projects/{projectId}/documents",
         "GET /projects/{projectId}/documents/{documentId}",
+        "GET /projects/{projectId}/documents/{documentId}/pages/{page}",
         "GET /projects/{projectId}/documents/{documentId}/pages/{page}/render-url",
         "GET /projects/{projectId}/documents/{documentId}/source-url",
         "PATCH /projects/{projectId}",
