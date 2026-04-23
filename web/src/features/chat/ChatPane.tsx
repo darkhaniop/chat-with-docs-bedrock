@@ -6,6 +6,7 @@ import {
   usePostMessage,
 } from "../../api/hooks/conversations";
 import { ApiError } from "../../api/errors";
+import type { Citation } from "../../api/types";
 import { initialStreamState, streamReducer, type StreamState } from "../../realtime/streamReducer";
 import { useChannelConnected, useChannelSubscription } from "../../realtime/useChannel";
 import { Composer } from "./Composer";
@@ -30,7 +31,13 @@ const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 const TERMINAL_STREAM_STATUSES = new Set(["done", "blocked", "failed"]);
 
-export function ChatPane({ projectId }: { projectId: string }) {
+export function ChatPane({
+  projectId,
+  onCitationClick,
+}: {
+  projectId: string;
+  onCitationClick?: (citation: Citation) => void;
+}) {
   const { conversation, isLoading, ensureConversation } = useActiveConversation(projectId);
   const conversationId = conversation?.conversationId ?? null;
   const { data: messages, refetch } = useMessages(conversationId);
@@ -38,6 +45,7 @@ export function ChatPane({ projectId }: { projectId: string }) {
   const cancelMessage = useCancelMessage(conversationId ?? "");
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<StreamState | null>(null);
+  const [announcement, setAnnouncement] = useState("");
   const isConnected = useChannelConnected();
 
   // docs/06: "the client should subscribe to the channel before posting where possible" — kept
@@ -52,7 +60,19 @@ export function ChatPane({ projectId }: { projectId: string }) {
   // `GET .../messages` is the authoritative record (docs/06-frontend.md#chat-and-streaming).
   useEffect(() => {
     if (stream !== null && TERMINAL_STREAM_STATUSES.has(stream.status)) {
-      void refetch().then(() => setStream(null));
+      const finalStatus = stream.status;
+      void refetch().then(() => {
+        setStream(null);
+        // docs/06-frontend.md#accessibility-and-polish: "Streaming text uses aria-live='polite'
+        // ... announced on completion rather than per delta" — the visible preview above
+        // updates on every delta with no live region at all (that would spam a screen reader),
+        // and this hidden region announces exactly once, only when a turn actually finishes.
+        setAnnouncement(
+          finalStatus === "done"
+            ? "Assistant finished responding."
+            : (STATUS_LABEL[finalStatus.toUpperCase()] ?? "Assistant response ended."),
+        );
+      });
     }
   }, [stream, refetch]);
 
@@ -101,6 +121,9 @@ export function ChatPane({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-1 flex-col">
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
+      </div>
       <div className="flex-1 overflow-y-auto p-3">
         {isLoading && <p className="text-sm text-slate-500">Loading conversation…</p>}
         {!isLoading &&
@@ -124,14 +147,22 @@ export function ChatPane({ projectId }: { projectId: string }) {
                   {message.text ? `: ${message.text}` : ""}
                 </span>
               ) : (
-                <MessageText text={message.text} citations={message.citations} />
+                <MessageText
+                  text={message.text}
+                  citations={message.citations}
+                  onCitationClick={onCitationClick}
+                />
               )}
             </li>
           ))}
           {isBusy && stream !== null && (
             <li className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900">
               {stream.text.length > 0 ? (
-                <MessageText text={stream.text} citations={stream.citations} />
+                <MessageText
+                  text={stream.text}
+                  citations={stream.citations}
+                  onCitationClick={onCitationClick}
+                />
               ) : (
                 <span className="text-slate-500">
                   {STREAM_STATUS_LABEL[stream.status] ?? "Working…"}

@@ -150,6 +150,15 @@ def _dispatch(route_key: str, event: dict[str, Any]) -> dict[str, Any]:
             ),
         )
 
+    if route_key == "GET /projects/{projectId}/documents/{documentId}/pages/{page}":
+        owner_sub = _owner_sub(event)
+        project_id = _path(event, "projectId")
+        document_id = _path(event, "documentId")
+        page = _path(event, "page")
+        return _response(
+            200, documents.page(deps.get_repo(), owner_sub, project_id, document_id, page)
+        )
+
     if route_key == "POST /projects/{projectId}/conversations":
         owner_sub = _owner_sub(event)
         project_id = _path(event, "projectId")

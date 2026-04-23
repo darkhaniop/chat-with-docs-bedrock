@@ -118,6 +118,15 @@ class Page(_CamelModel):
     text_density: float
     s3: PageRenders | None = None
 
+    def to_api(self) -> dict[str, object]:
+        """docs/05-api-contracts.md#documents: the viewer's coordinate-space endpoint
+        (`GET .../pages/{page}`) — `width`/`height` are what `lib/geometry.ts`'s image-document
+        overlay path scales rects against (docs/06-frontend.md#pdf-viewer-and-highlighting).
+        `s3` is excluded (internal storage keys, not URLs — see `PageRenders`'s own docstring),
+        as is `text_density` (an internal heuristic, not client-facing) and `document_id`
+        (redundant with the URL path)."""
+        return self.model_dump(by_alias=True, exclude={"s3", "text_density", "document_id"})
+
 
 class Sentence(_CamelModel):
     """One text block in the Citations-API `document` content block — `i` is the block index

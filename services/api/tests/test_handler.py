@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from api import deps
 from api.handler import lambda_handler
 from common.config import get_settings
+from common.models import Page
 from common.testing.vectors import FakeVectorIndex
 from common.vectors import chunk_vector_key, page_vector_key
 
@@ -377,6 +379,79 @@ def test_render_url_returns_a_presigned_get_for_a_valid_page() -> None:
     )
     assert status == 200
     assert "expiresAt" in body
+
+
+def test_get_page_returns_coordinate_space_metadata() -> None:
+    """docs/05-api-contracts.md#documents: the viewer's coordinate-space endpoint — no route
+    existed for this before Phase 7 (see api/documents.py's `page()` docstring)."""
+    project = _create_project()
+    document = _upload_document(project["projectId"])["document"]
+    deps.get_repo().put_page(
+        Page(
+            document_id=document["documentId"],
+            page_number=1,
+            width=612.0,
+            height=792.0,
+            rotation=0,
+            text_source="pdf",
+            text_density=0.5,
+        )
+    )
+
+    status, body = _call(
+        _event(
+            "GET /projects/{projectId}/documents/{documentId}/pages/{page}",
+            path_parameters={
+                "projectId": project["projectId"],
+                "documentId": document["documentId"],
+                "page": "1",
+            },
+        )
+    )
+    assert status == 200
+    assert body == {
+        "pageNumber": 1,
+        "width": 612.0,
+        "height": 792.0,
+        "rotation": 0,
+        "textSource": "pdf",
+    }
+
+
+def test_get_page_404s_for_a_page_that_does_not_exist() -> None:
+    project = _create_project()
+    document = _upload_document(project["projectId"])["document"]
+
+    status, body = _call(
+        _event(
+            "GET /projects/{projectId}/documents/{documentId}/pages/{page}",
+            path_parameters={
+                "projectId": project["projectId"],
+                "documentId": document["documentId"],
+                "page": "1",
+            },
+        )
+    )
+    assert status == 400
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_get_page_under_someone_elses_document_is_404() -> None:
+    project = _create_project()
+    document = _upload_document(project["projectId"])["document"]
+
+    status, body = _call(
+        _event(
+            "GET /projects/{projectId}/documents/{documentId}/pages/{page}",
+            path_parameters={
+                "projectId": project["projectId"],
+                "documentId": document["documentId"],
+                "page": "1",
+            },
+            claims=_OTHER_CLAIMS,
+        )
+    )
+    assert status == 404
 
 
 def _ingest(project_id: str, document_id: str, **kwargs: Any) -> tuple[int, dict[str, Any]]:

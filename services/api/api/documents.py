@@ -191,3 +191,23 @@ def render_url(
     settings = get_settings()
     key = render_key(project_id, document_id, page_number)
     return {"url": store.presign_get(key), "expiresAt": _expiry(settings)}
+
+
+def page(
+    repo: Repo, owner_sub: str, project_id: str, document_id: str, page_raw: str
+) -> dict[str, Any]:
+    """docs/05-api-contracts.md#documents: the Page item's coordinate-space metadata
+    (`width`/`height`/`rotation`/`textSource`) — the piece docs/06-frontend.md's image-document
+    viewer needs and that had no route at all before Phase 7 (a real gap: a citation's `rects`
+    are only meaningful relative to the page they were extracted against, and there is no other
+    way for the client to learn a page's canonical `width`/`height`, e.g. `page.getViewport()`
+    doesn't exist for a standalone image document the way it does for a PDF page in pdf.js)."""
+    authz.require_document(repo, owner_sub, project_id, document_id)
+    page_number = validation.validate_page_number(page_raw)
+    page_item = repo.get_page(document_id, page_number)
+    if page_item is None:
+        raise bad_request(
+            "VALIDATION_ERROR",
+            f"Page {page_number} does not exist for this document.",
+        )
+    return page_item.to_api()

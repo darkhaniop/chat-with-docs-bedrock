@@ -1,1 +1,27 @@
 @import "tailwindcss";
+
+/* docs/06-frontend.md#accessibility-and-polish: "Dark mode via Tailwind's class strategy,
+   following the system preference by default." Tailwind v4 defaults `dark:` to a media query;
+   this opts back into the class strategy so `app/providers.tsx` can set `.dark` on `<html>`
+   from `prefers-color-scheme` today and a manual override later without changing any utility
+   class in the codebase. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* docs/06-frontend.md#pdf-viewer-and-highlighting: "one-shot pulse honouring
+   prefers-reduced-motion" — `HighlightOverlay` always renders the static highlight
+   (`mix-blend-multiply` background) and layers this only under `motion-safe:`. */
+@theme {
+  --animate-cwd-pulse: cwd-pulse 1.2s ease-out 1;
+}
+
+@keyframes cwd-pulse {
+  0% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0.25;
+  }
+}

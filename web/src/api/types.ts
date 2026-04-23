@@ -43,6 +43,22 @@ export interface PresignedUpload {
   expiresAt: string;
 }
 
+export interface PresignedGet {
+  url: string;
+  expiresAt: string;
+}
+
+/** docs/05-api-contracts.md#documents: the viewer's coordinate-space endpoint
+ * (`GET .../pages/{page}`) — `width`/`height` are canonical PDF-user-space points
+ * (docs/02-data-model.md#coordinate-systems), origin top-left. */
+export interface DocumentPage {
+  pageNumber: number;
+  width: number;
+  height: number;
+  rotation: number;
+  textSource: "pdf" | "textract" | "none";
+}
+
 export interface CreateDocumentResponse {
   document: Document;
   upload: PresignedUpload;
