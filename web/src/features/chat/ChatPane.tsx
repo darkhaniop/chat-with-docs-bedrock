@@ -94,7 +94,7 @@ export function ChatPane({
       // reached a terminal value through the reducer, even though the real answer had already
       // resolved and was sitting in the refetched list the whole time.
       void refetch().then((result) => {
-        const found = result.data?.items.find((m) => m.messageId === messageId);
+        const found = result.data?.items.find((m) => m?.messageId === messageId);
         if (found !== undefined && found.status !== "STREAMING") {
           setStream(null);
         }
@@ -132,29 +132,31 @@ export function ChatPane({
             <p className="text-sm text-slate-500">Ask a question about this project's documents.</p>
           )}
         <ul className="flex flex-col gap-3">
-          {messages?.items.map((message) => (
-            <li
-              key={message.messageId}
-              className={
-                message.role === "user"
-                  ? "self-end rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
-                  : "rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900"
-              }
-            >
-              {message.status in STATUS_LABEL ? (
-                <span className="text-red-700">
-                  {STATUS_LABEL[message.status]}
-                  {message.text ? `: ${message.text}` : ""}
-                </span>
-              ) : (
-                <MessageText
-                  text={message.text}
-                  citations={message.citations}
-                  onCitationClick={onCitationClick}
-                />
-              )}
-            </li>
-          ))}
+          {messages?.items
+            .filter((message) => message != null)
+            .map((message) => (
+              <li
+                key={message.messageId}
+                className={
+                  message.role === "user"
+                    ? "self-end rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
+                    : "rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900"
+                }
+              >
+                {message.status in STATUS_LABEL ? (
+                  <span className="text-red-700">
+                    {STATUS_LABEL[message.status]}
+                    {message.text ? `: ${message.text}` : ""}
+                  </span>
+                ) : (
+                  <MessageText
+                    text={message.text}
+                    citations={message.citations}
+                    onCitationClick={onCitationClick}
+                  />
+                )}
+              </li>
+            ))}
           {isBusy && stream !== null && (
             <li className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900">
               {stream.text.length > 0 ? (

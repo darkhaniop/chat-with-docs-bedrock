@@ -51,7 +51,12 @@ export interface ChannelEnvelope {
  * receive a straggler.
  */
 export function streamReducer(state: StreamState, envelope: ChannelEnvelope): StreamState {
-  const data = envelope.data;
+  // `channelClient.ts` already validates the parsed envelope has both `type` and `data` keys
+  // before ever calling this reducer, but `data`'s own shape is only asserted at the type
+  // level (TS), never checked at runtime — this is the one extra guard that keeps a malformed
+  // `data` value from crashing the reducer outright, matching docs/04's "an unparseable event
+  // degrades gracefully — never a crash."
+  const data = typeof envelope.data === "object" && envelope.data !== null ? envelope.data : {};
   if (typeof data.messageId === "string" && data.messageId !== state.messageId) {
     return state;
   }

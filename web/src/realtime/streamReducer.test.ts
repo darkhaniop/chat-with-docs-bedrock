@@ -94,4 +94,26 @@ describe("streamReducer", () => {
     expect(state.lastSeq).toBe(1);
     expect(state.status).toBe("starting");
   });
+
+  it("does not crash when data is missing or not an object", () => {
+    // `ChannelEnvelope.data` is typed as `Record<string, unknown>`, but that's a compile-time
+    // guarantee only — nothing upstream verifies it against a malformed/unexpected wire payload
+    // at runtime. docs/04's "an unparseable event degrades gracefully — never a crash" applies
+    // here too, not just to a JSON.parse failure.
+    let state = initialStreamState("msg-1");
+    state = streamReducer(state, {
+      type: "message.delta",
+      seq: 1,
+      data: undefined as unknown as Record<string, unknown>,
+    });
+    expect(state.text).toBe("");
+    expect(state.status).toBe("streaming");
+
+    state = streamReducer(state, {
+      type: "message.delta",
+      seq: 2,
+      data: null as unknown as Record<string, unknown>,
+    });
+    expect(state.text).toBe("");
+  });
 });

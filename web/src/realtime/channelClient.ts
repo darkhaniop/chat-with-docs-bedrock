@@ -89,7 +89,6 @@ export class EventChannelClient {
       const user = await userManager.getUser();
       const idToken = user?.id_token;
       if (idToken === undefined) {
-        this.connecting = false;
         return;
       }
       const header = base64UrlEncode(
@@ -106,6 +105,12 @@ export class EventChannelClient {
       socket.onclose = () => this.handleDisconnect();
       socket.onerror = () => socket.close();
       this.socket = socket;
+    } catch {
+      // The app is correct without a channel at all (docs/06: "a latency optimisation") — a
+      // synchronous throw from constructing the socket itself (e.g. a malformed subprotocol
+      // string) must not become an unhandled promise rejection. `handleDisconnect`'s own retry
+      // isn't reachable here since `this.socket` was never assigned; the next `subscribe()`
+      // call (or reconnect timer, if one is already pending) tries again.
     } finally {
       this.connecting = false;
     }
@@ -136,10 +141,22 @@ export class EventChannelClient {
         const rawEvents = (message.event as string[] | undefined) ?? [];
         for (const raw of rawEvents) {
           try {
-            sub.listener(JSON.parse(raw) as ChannelEnvelope);
+            const parsed: unknown = JSON.parse(raw);
+            // Defensive per docs/04: an unparseable/malformed event degrades to "missed one
+            // delta", never a crash — reconciliation covers the gap. `JSON.parse` succeeding
+            // is not enough on its own: a bare number or string is also valid JSON, and would
+            // otherwise reach `streamReducer` as a non-object `envelope`, crashing on
+            // `envelope.data.messageId`.
+            if (
+              typeof parsed === "object" &&
+              parsed !== null &&
+              "type" in parsed &&
+              "data" in parsed
+            ) {
+              sub.listener(parsed as ChannelEnvelope);
+            }
           } catch {
-            // Defensive per docs/04: an unparseable event degrades to "missed one delta",
-            // never a crash — reconciliation covers the gap.
+            // JSON.parse itself failed — same "skip this one event" handling as above.
           }
         }
         break;

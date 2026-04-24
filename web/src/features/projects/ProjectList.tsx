@@ -27,7 +27,13 @@ export function ProjectList({
   };
 
   return (
-    <div className="flex w-64 flex-col gap-3 border-r border-slate-200 p-3">
+    // No self-imposed width here — the caller controls sizing (a resizable `Panel` inside
+    // `Workspace`, or a fixed-width wrapper div before a project is selected). A `w-64` used to
+    // live on this element directly; nested inside a `Panel` (which sizes via `flex-basis` and
+    // relies on `overflow: auto` for anything wider, not on its children's intrinsic width) that
+    // just clipped the project name and the "Add"/"Delete" buttons instead of controlling the
+    // panel's actual width — confirmed live after the first deploy.
+    <div className="flex h-full flex-col gap-3 p-3">
       <form onSubmit={submitCreate} className="flex gap-2">
         <input
           value={name}

@@ -131,6 +131,50 @@ describe("EventChannelClient", () => {
     expect(received).toEqual([{ type: "message.delta", seq: 1, data: { text: "hi" } }]);
   });
 
+  it("skips a data-message event that parses to something other than an envelope object", async () => {
+    // `JSON.parse` succeeding is not the same as "this is a well-formed ChannelEnvelope" — a
+    // bare number or string is also valid JSON. Found worth pinning after investigating a
+    // live "can't access property messageId" crash report: nothing before this fix verified
+    // the parsed shape before handing it to a subscriber's listener.
+    getUser.mockResolvedValue({ id_token: "the-id-token" });
+    const EventChannelClient = await importClient();
+    const client = new EventChannelClient(
+      "realtime.example.com",
+      "http.example.com",
+      factory() as never,
+    );
+
+    const received: unknown[] = [];
+    client.subscribe("/conversations/conv-1", (envelope) => received.push(envelope));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const socket = expectSocket(0);
+    socket.open();
+    socket.serverMessage({ type: "connection_ack", connectionTimeoutMs: 300_000 });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const subscribeMessage = JSON.parse(
+      socket.sent.find((s) => (JSON.parse(s) as { type: string }).type === "subscribe") ?? "{}",
+    ) as { id: string };
+    socket.serverMessage({ type: "subscribe_success", id: subscribeMessage.id });
+
+    socket.serverMessage({
+      type: "data",
+      id: subscribeMessage.id,
+      event: [
+        "5", // a bare number — valid JSON, not an envelope
+        '"a string"', // a bare string — same problem
+        "null",
+        JSON.stringify({ noType: true, data: {} }), // object, but missing `type`
+        JSON.stringify({ type: "message.delta", data: { text: "ok" } }), // well-formed
+      ],
+    });
+
+    expect(received).toEqual([{ type: "message.delta", data: { text: "ok" } }]);
+  });
+
   it("resubscribes to every active channel after a reconnect", async () => {
     getUser.mockResolvedValue({ id_token: "the-id-token" });
     const EventChannelClient = await importClient();

@@ -69,7 +69,9 @@ function Workspace({ email, onSignOut }: { email: string | undefined; onSignOut:
       </header>
       {selectedProjectId === null ? (
         <div className="flex flex-1">
-          <ProjectList selectedProjectId={selectedProjectId} onSelect={setSelectedProjectId} />
+          <div className="w-64 border-r border-slate-200 dark:border-slate-800">
+            <ProjectList selectedProjectId={selectedProjectId} onSelect={setSelectedProjectId} />
+          </div>
           <div className="flex flex-1 items-center justify-center text-sm text-slate-500">
             Select or create a project to see its documents.
           </div>
@@ -79,22 +81,28 @@ function Workspace({ email, onSignOut }: { email: string | undefined; onSignOut:
         // nothing is selected, giving the chat the full width." The viewer `Panel` is only
         // mounted at all once something is selected, rather than rendered at zero width — this
         // also avoids loading a PDF/image nobody has asked to see yet.
+        //
+        // `defaultSize`/`minSize`/`maxSize` MUST be percentage strings ("16%"), not bare
+        // numbers — react-resizable-panels treats a bare number as *pixels*, confirmed live
+        // after deploy: every panel below rendered at single-digit-to-low-double-digit pixel
+        // widths (16px/18px/etc.) with dragging capped at an equally tiny `maxSize` in px, i.e.
+        // exactly the "collapsed to a narrow strip with no way to expand it" bug report.
         <Group orientation="horizontal" className="flex-1" id="workspace">
-          <Panel id="projects" defaultSize={16} minSize={12} maxSize={30}>
+          <Panel id="projects" defaultSize="16%" minSize="12%" maxSize="30%">
             <ProjectList selectedProjectId={selectedProjectId} onSelect={setSelectedProjectId} />
           </Panel>
           <Separator className="w-1 cursor-col-resize bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700" />
-          <Panel id="documents" defaultSize={18} minSize={12} maxSize={35}>
+          <Panel id="documents" defaultSize="18%" minSize="12%" maxSize="35%">
             <DocumentList projectId={selectedProjectId} />
           </Panel>
           <Separator className="w-1 cursor-col-resize bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700" />
-          <Panel id="chat" defaultSize={selection !== null ? 36 : 66} minSize={25}>
+          <Panel id="chat" defaultSize={selection !== null ? "36%" : "66%"} minSize="25%">
             <ChatPane projectId={selectedProjectId} onCitationClick={handleCitationClick} />
           </Panel>
           {selection !== null && (
             <>
               <Separator className="w-1 cursor-col-resize bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700" />
-              <Panel id="viewer" defaultSize={30} minSize={20}>
+              <Panel id="viewer" defaultSize="30%" minSize="20%">
                 <Suspense fallback={<p className="p-4 text-sm text-slate-500">Loading viewer…</p>}>
                   <ViewerPane
                     projectId={selectedProjectId}
