@@ -207,6 +207,30 @@ def test_post_message_writes_user_message_and_enqueues_the_turn() -> None:
     assert call["history"] == []
 
 
+def test_post_message_user_message_sorts_before_the_assistant_placeholder() -> None:
+    """Regression test: `assistant_message_id` used to be minted before the user message's own
+    id, and a real `claim_lock` DynamoDB round-trip in between reliably made the assistant id's
+    timestamp component *earlier* — so `GET .../messages` (sorted ascending by id) showed the
+    answer above the question it answered, on every turn, not just occasionally. See
+    `common/repo.py`'s `next_id_after` docstring for the full story."""
+    project = _create_project()
+    created = _create_conversation(project["projectId"], body={})
+
+    status, body = _call(
+        _event(
+            "POST /conversations/{conversationId}/messages",
+            path_parameters={"conversationId": created["conversationId"]},
+            body={"text": "What was Q3 uptime?"},
+        )
+    )
+    assert status == 202
+
+    items, _ = deps.get_repo().list_messages(created["conversationId"], limit=10, cursor=None)
+    assert [m.role for m in items] == ["user", "assistant"]
+    assert items[0].message_id == body["userMessage"]["messageId"]
+    assert items[1].message_id == body["assistantMessageId"]
+
+
 def test_post_message_rejects_empty_text() -> None:
     project = _create_project()
     created = _create_conversation(project["projectId"], body={})

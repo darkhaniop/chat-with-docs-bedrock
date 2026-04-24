@@ -7,7 +7,12 @@ import {
 } from "../../api/hooks/conversations";
 import { ApiError } from "../../api/errors";
 import type { Citation } from "../../api/types";
-import { initialStreamState, streamReducer, type StreamState } from "../../realtime/streamReducer";
+import {
+  initialStreamState,
+  streamReducer,
+  TERMINAL_STATUSES,
+  type StreamState,
+} from "../../realtime/streamReducer";
 import { useChannelConnected, useChannelSubscription } from "../../realtime/useChannel";
 import { Composer } from "./Composer";
 import { MessageText } from "./MessageText";
@@ -29,7 +34,6 @@ const STREAM_STATUS_LABEL: Record<string, string> = {
 // is terminal, capped at 5 minutes."
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
-const TERMINAL_STREAM_STATUSES = new Set(["done", "blocked", "failed"]);
 
 export function ChatPane({
   projectId,
@@ -59,7 +63,7 @@ export function ChatPane({
   // The streamed text/citations are a preview only — once the turn reaches a terminal state,
   // `GET .../messages` is the authoritative record (docs/06-frontend.md#chat-and-streaming).
   useEffect(() => {
-    if (stream !== null && TERMINAL_STREAM_STATUSES.has(stream.status)) {
+    if (stream !== null && TERMINAL_STATUSES.has(stream.status)) {
       const finalStatus = stream.status;
       void refetch().then(() => {
         setStream(null);
@@ -77,7 +81,7 @@ export function ChatPane({
   }, [stream, refetch]);
 
   useEffect(() => {
-    if (stream === null || TERMINAL_STREAM_STATUSES.has(stream.status)) return;
+    if (stream === null || TERMINAL_STATUSES.has(stream.status)) return;
     if (isConnected()) return;
     const messageId = stream.messageId;
     const start = Date.now();
@@ -117,7 +121,7 @@ export function ChatPane({
     }
   };
 
-  const isBusy = stream !== null && !TERMINAL_STREAM_STATUSES.has(stream.status);
+  const isBusy = stream !== null && !TERMINAL_STATUSES.has(stream.status);
 
   return (
     <div className="flex flex-1 flex-col">

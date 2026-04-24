@@ -13,6 +13,11 @@ export interface Source {
 export type StreamStatus =
   "starting" | "retrieving" | "thinking" | "streaming" | "done" | "blocked" | "failed";
 
+/** A turn is over once it reaches one of these — see `streamReducer`'s own comment on why this
+ * must be sticky. The single source of truth `ChatPane.tsx` also uses to decide when to
+ * reconcile, rather than each keeping its own copy of this set. */
+export const TERMINAL_STATUSES: ReadonlySet<StreamStatus> = new Set(["done", "blocked", "failed"]);
+
 export interface StreamState {
   messageId: string;
   status: StreamStatus;
@@ -58,6 +63,19 @@ export function streamReducer(state: StreamState, envelope: ChannelEnvelope): St
   // degrades gracefully — never a crash."
   const data = typeof envelope.data === "object" && envelope.data !== null ? envelope.data : {};
   if (typeof data.messageId === "string" && data.messageId !== state.messageId) {
+    return state;
+  }
+
+  // A terminal status is sticky: once a turn reaches "done"/"blocked"/"failed", only a *new*
+  // turn's `initialStreamState` should ever move `stream` out of it again — never a further
+  // envelope. Without this, a late-arriving duplicate or reordered non-terminal event (e.g. a
+  // redelivered "message.delta" arriving after "message.completed" — AppSync Events, like most
+  // pub/sub systems, does not guarantee exactly-once, in-order delivery) would regress the
+  // status back to "streaming" with no second "message.completed" ever coming to recover it,
+  // permanently stranding `ChatPane`'s reconciliation effect (it only fires on a *transition*
+  // into a terminal status) and leaving the composer stuck showing "Cancel"/the streaming
+  // preview stuck showing "Sending…" until the user reloads the page.
+  if (TERMINAL_STATUSES.has(state.status)) {
     return state;
   }
 

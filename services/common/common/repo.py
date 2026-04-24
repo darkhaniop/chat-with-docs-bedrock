@@ -76,6 +76,25 @@ def new_id() -> str:
     return str(ULID())
 
 
+def next_id_after(previous_id: str) -> str:
+    """A new ULID guaranteed to sort **strictly after** `previous_id`.
+
+    Two `new_id()` calls made back-to-back (no meaningful wall-clock time between them, e.g. two
+    `Message` items created in the same Lambda invocation) are *not* reliably ordered by call
+    order: a ULID's lexicographic sort is dominated by its millisecond timestamp, and the random
+    suffix that breaks ties *within* the same millisecond has no bias toward call order —
+    confirmed empirically, ~50% of same-millisecond `ULID()` pairs sort in the wrong direction.
+    `api/conversations.py`'s `post_message` hit this for real: the assistant placeholder's id was
+    minted before the user message's (needed early, to claim the conversation lock before writing
+    anything), and the real gap that a `claim_lock` DynamoDB round-trip adds in between made the
+    assistant id's *timestamp* component reliably earlier than the user message's — so the
+    assistant reply sorted **before** the question it answered in `GET .../messages`, on every
+    real turn, not just occasionally. Incrementing the previous id's integer value by 1 is a
+    cheap, exact way to guarantee strict ordering for two ids that need to be adjacent in time.
+    """
+    return str(ULID.from_int(int(ULID.from_str(previous_id)) + 1))
+
+
 def now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 

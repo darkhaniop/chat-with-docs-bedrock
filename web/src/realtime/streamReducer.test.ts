@@ -116,4 +116,43 @@ describe("streamReducer", () => {
     });
     expect(state.text).toBe("");
   });
+
+  it("is sticky once a turn reaches a terminal status — a late/duplicate event cannot regress it", () => {
+    // Found live: a stuck "Sending…" bubble that only a page reload cleared, even though the
+    // turn had genuinely completed. AppSync Events (like most pub/sub systems) does not
+    // guarantee exactly-once, in-order delivery — a redelivered "message.delta" arriving after
+    // "message.completed" used to flip status back to "streaming" with no second
+    // "message.completed" ever coming to recover it, permanently stranding `ChatPane`'s
+    // reconciliation effect (it only fires on a *transition* into a terminal status).
+    let state = initialStreamState("msg-1");
+    state = streamReducer(state, envelope("message.delta", 1, { text: "hi" }));
+    state = streamReducer(state, envelope("message.completed", 2, {}));
+    expect(state.status).toBe("done");
+
+    const afterStray = streamReducer(state, envelope("message.delta", 1, { text: " again" }));
+    expect(afterStray).toBe(state); // unchanged, same reference — not just an equal value
+
+    expect(streamReducer(state, envelope("message.thinking", 3)).status).toBe("done");
+    expect(streamReducer(state, envelope("message.started", 3)).status).toBe("done");
+  });
+
+  it("stays sticky for blocked and failed too, not just done", () => {
+    let state = initialStreamState("msg-1");
+    state = streamReducer(state, envelope("message.blocked", 1, { reason: "x" }));
+    expect(streamReducer(state, envelope("message.delta", 2, { text: "late" })).text).toBe("");
+
+    let failedState = initialStreamState("msg-2");
+    failedState = streamReducer(failedState, {
+      type: "message.failed",
+      seq: 1,
+      data: { messageId: "msg-2", message: "x" },
+    });
+    expect(
+      streamReducer(failedState, {
+        type: "message.delta",
+        seq: 2,
+        data: { messageId: "msg-2", text: "late" },
+      }).text,
+    ).toBe("");
+  });
 });

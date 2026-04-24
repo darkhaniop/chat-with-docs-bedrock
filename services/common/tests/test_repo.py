@@ -1,7 +1,22 @@
 from __future__ import annotations
 
 from common.models import Chunk, Page, PageRenders, Sentence
-from common.repo import NotFound, Repo, now_iso
+from common.repo import NotFound, Repo, new_id, next_id_after, now_iso
+
+
+def test_next_id_after_always_sorts_strictly_after_the_given_id() -> None:
+    # Two `new_id()` calls made back-to-back are *not* reliably ordered — confirmed empirically
+    # (`next_id_after`'s own docstring) — which is exactly the bug this function exists to avoid
+    # (api/conversations.py's `post_message`: the assistant reply sorting before the question it
+    # answered). Run many trials since the failure mode is probabilistic by nature.
+    for _ in range(1000):
+        previous = new_id()
+        assert next_id_after(previous) > previous
+
+
+def test_next_id_after_is_deterministic_for_the_same_input() -> None:
+    previous = new_id()
+    assert next_id_after(previous) == next_id_after(previous)
 
 
 def test_create_project_writes_canonical_and_list_view(repo: Repo) -> None:

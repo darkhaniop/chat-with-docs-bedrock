@@ -17,7 +17,7 @@ from api import validation
 from api.errors import conflict
 from common import authz
 from common.answer_queue import AnswerQueueProtocol
-from common.repo import NotFound, Repo, new_id
+from common.repo import NotFound, Repo, new_id, next_id_after
 
 # The lock's TTL needs to comfortably outlive a real answer turn (Bedrock generation with
 # adaptive thinking can run tens of seconds) while still being reclaimable in reasonable time if
@@ -97,11 +97,19 @@ def post_message(
     prior_messages, _ = repo.list_messages(conversation_id, limit=100, cursor=None)
     history = [{"role": m.role, "text": m.text} for m in prior_messages]
 
-    assistant_message_id = new_id()
+    # `assistant_message_id` must sort *after* the user message's id in `GET .../messages`
+    # (docs/02-data-model.md's `sk = MSG#{ulid}` — items list in id order) or the transcript
+    # shows the answer above the question it answers. Two `new_id()` calls made back-to-back
+    # are *not* reliably ordered (see `next_id_after`'s docstring) — generating the user
+    # message's id first and deriving the assistant's from it guarantees the order, while still
+    # claiming the lock before anything is written.
+    user_message_id = new_id()
+    assistant_message_id = next_id_after(user_message_id)
     if not repo.claim_lock(conversation_id, assistant_message_id, ttl_seconds=_LOCK_TTL_SECONDS):
         raise conflict("ANSWER_IN_FLIGHT", "An answer is already in flight for this conversation.")
 
     user_message = repo.create_message(
+        message_id=user_message_id,
         conversation_id=conversation_id,
         project_id=conversation.project_id,
         owner_sub=owner_sub,
