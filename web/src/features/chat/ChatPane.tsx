@@ -13,7 +13,7 @@ import {
   TERMINAL_STATUSES,
   type StreamState,
 } from "../../realtime/streamReducer";
-import { useChannelConnected, useChannelSubscription } from "../../realtime/useChannel";
+import { useChannelSubscription } from "../../realtime/useChannel";
 import { Composer } from "./Composer";
 import { MessageText } from "./MessageText";
 
@@ -50,7 +50,6 @@ export function ChatPane({
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<StreamState | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const isConnected = useChannelConnected();
 
   // docs/06: "the client should subscribe to the channel before posting where possible" — kept
   // open for the conversation's whole lifetime rather than only during a turn, so it already is
@@ -80,9 +79,21 @@ export function ChatPane({
     }
   }, [stream, refetch]);
 
+  // docs/06-frontend.md#reconnection-and-reconciliation: "If a message is STREAMING in the
+  // fetched record but no events are arriving, the UI polls." This deliberately does *not* gate
+  // on `isConnected()` (the raw WebSocket's open/closed state) — found live that a WebSocket can
+  // be fully OPEN (connection_ack received) while a specific `subscribe` for the conversation
+  // channel silently never gets through (e.g. an expired id token on that one message, or any
+  // other reason the server-side subscription doesn't end up delivering events), and neither
+  // `subscribe_error` nor a plain "no data ever arrives" has any client-side detection today
+  // (`channelClient.ts`'s `subscribe_error`/`broadcast_error` cases are still no-ops). Polling
+  // unconditionally while a turn is in flight is a strictly more robust backstop: it costs a
+  // little redundant network chatter on the common case where the channel *is* working (the
+  // channel-driven terminal transition above almost always wins the race and clears `stream`
+  // first), but it means "the channel isn't actually delivering, for whatever reason" can never
+  // leave the composer stuck showing "Cancel" forever the way `isConnected()` alone allowed.
   useEffect(() => {
     if (stream === null || TERMINAL_STATUSES.has(stream.status)) return;
-    if (isConnected()) return;
     const messageId = stream.messageId;
     const start = Date.now();
     const interval = setInterval(() => {
@@ -90,13 +101,11 @@ export function ChatPane({
         clearInterval(interval);
         return;
       }
-      // A refetch alone only refreshes the cache — if the channel never delivers
-      // `message.completed` (the disconnected case this poll exists for), nothing else ever
-      // inspects the result to notice the turn is actually done, and `stream` (and therefore
-      // the composer's disabled/Cancel state) would stay stuck forever. Found live via
-      // `e2e/tests/resilience.spec.ts`: a permanently broken socket meant `stream.status` never
-      // reached a terminal value through the reducer, even though the real answer had already
-      // resolved and was sitting in the refetched list the whole time.
+      // A refetch alone only refreshes the cache — nothing else inspects the result to notice
+      // the turn is actually done, and `stream` (and therefore the composer's disabled/Cancel
+      // state) would stay stuck forever otherwise. Found live via `e2e/tests/resilience.spec.ts`
+      // for the disconnected case, and via a real deploy for the "connected but not delivering"
+      // case above.
       void refetch().then((result) => {
         const found = result.data?.items.find((m) => m?.messageId === messageId);
         if (found !== undefined && found.status !== "STREAMING") {
@@ -106,7 +115,7 @@ export function ChatPane({
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-armed on status change only
-  }, [stream?.messageId, stream?.status, refetch, isConnected]);
+  }, [stream?.messageId, stream?.status, refetch]);
 
   const handleSend = async (text: string) => {
     setError(null);

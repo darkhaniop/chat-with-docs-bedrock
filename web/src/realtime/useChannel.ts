@@ -23,18 +23,3 @@ export function useChannelSubscription(
     return eventChannelClient.subscribe(channel, (envelope) => onEventRef.current(envelope));
   }, [channel]);
 }
-
-/** Tracks the shared channel client's connect/disconnect state — used only to decide whether a
- * polling fallback is needed (docs/06: "If a message is STREAMING ... but no events are
- * arriving, the UI polls"), never to gate correctness. */
-export function useChannelConnected(): () => boolean {
-  const connectedRef = useRef(eventChannelClient.isConnected);
-
-  useEffect(() => {
-    return eventChannelClient.addStatusListener((connected) => {
-      connectedRef.current = connected;
-    });
-  }, []);
-
-  return () => connectedRef.current;
-}

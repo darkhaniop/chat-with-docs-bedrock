@@ -46,21 +46,12 @@ export class EventChannelClient {
   private subscriptions = new Map<string, Subscription>();
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private statusListeners = new Set<(connected: boolean) => void>();
 
   constructor(
     private readonly realtimeDomain: string,
     private readonly httpDomain: string,
     private readonly webSocketFactory: WebSocketFactory = DEFAULT_FACTORY,
   ) {}
-
-  /** Notified on every connect/disconnect — `DocumentList`/`ChatPane` use this only to decide
-   * whether to fall back to polling, never to gate correctness. A set, not a single slot, since
-   * multiple components (chat pane, document list) each track connectivity independently. */
-  addStatusListener(listener: (connected: boolean) => void): () => void {
-    this.statusListeners.add(listener);
-    return () => this.statusListeners.delete(listener);
-  }
 
   subscribe(channel: string, listener: Listener): () => void {
     const id = crypto.randomUUID();
@@ -76,10 +67,6 @@ export class EventChannelClient {
         this.socket.send(JSON.stringify({ type: "unsubscribe", id }));
       }
     };
-  }
-
-  get isConnected(): boolean {
-    return this.socket?.readyState === WebSocket.OPEN;
   }
 
   private async ensureConnected(): Promise<void> {
@@ -127,7 +114,6 @@ export class EventChannelClient {
     switch (message.type) {
       case "connection_ack":
         this.reconnectAttempt = 0;
-        for (const l of this.statusListeners) l(true);
         for (const id of this.subscriptions.keys()) this.sendSubscribe(id);
         break;
       case "subscribe_success": {
@@ -135,6 +121,17 @@ export class EventChannelClient {
         if (sub) sub.acknowledged = true;
         break;
       }
+      case "subscribe_error":
+      case "broadcast_error":
+        // A subscribe can fail server-side (e.g. an expired id token on that one message)
+        // while the WebSocket connection itself stays fully open — found live as a stuck
+        // "Sending…" bubble with no client-side signal at all that anything had gone wrong.
+        // There's no good automatic recovery here yet (no silent token renew — docs/06's own
+        // gap note), so this is a diagnostic aid, not a fix: `ChatPane`'s reconciliation poll
+        // (which no longer depends on the raw socket's connected/disconnected state) is what
+        // actually recovers the turn regardless of what this branch does.
+        console.warn(`AppSync Events ${message.type}`, message);
+        break;
       case "data": {
         const sub = this.subscriptions.get(message.id as string);
         if (!sub) return;
@@ -161,8 +158,8 @@ export class EventChannelClient {
         }
         break;
       }
-      // "ka" (keep-alive), "subscribe_error", "unsubscribe_success"/"error": nothing this
-      // client needs to act on beyond staying connected.
+      // "ka" (keep-alive), "unsubscribe_success"/"error": nothing this client needs to act on
+      // beyond staying connected.
       default:
         break;
     }
@@ -187,7 +184,6 @@ export class EventChannelClient {
 
   private handleDisconnect(): void {
     this.socket = null;
-    for (const l of this.statusListeners) l(false);
     for (const sub of this.subscriptions.values()) sub.acknowledged = false;
     if (this.subscriptions.size === 0) return;
 
