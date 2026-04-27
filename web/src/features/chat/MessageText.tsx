@@ -57,7 +57,13 @@ export function MessageText({
                 aria-describedby={`citation-${citation.citationId}-desc`}
                 onClick={() => onCitationClick?.(citation)}
                 onKeyDown={handleCitationKeyDown}
-                className="ml-0.5 cursor-pointer text-[0.7em] text-blue-600 hover:underline dark:text-blue-400"
+                // `leading-none` overrides `line-height: 0`, which Tailwind Preflight sets on
+                // `sub`/`sup` so a superscript doesn't stretch the surrounding text line's
+                // height — fine for plain text (glyph ink still paints outside a zero-height
+                // line box) but fatal for this `inline-block` button: with no explicit
+                // line-height of its own, an inline-block's own box height *is* its inherited
+                // line-height.
+                className="ml-0.5 cursor-pointer text-[0.7em] leading-none text-blue-600 hover:underline dark:text-blue-400"
               >
                 [{citation.citationId.replace(/^c/, "")}]
               </button>

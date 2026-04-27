@@ -66,4 +66,10 @@ describe("MessageText", () => {
       "The facility achieved 94% uptime in Q3.",
     );
   });
+
+  it("overrides the inherited sup{line-height:0} with an explicit line-height", () => {
+    render(<MessageText text="Uptime was 94%." citations={[citation({ citationId: "c0" })]} />);
+    const button = screen.getByRole("button", { name: "[0]" });
+    expect(button.className).toContain("leading-none");
+  });
 });
