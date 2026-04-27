@@ -38,6 +38,7 @@ class _RecordingClient:
         self.raise_on_create_index: Exception | None = None
         self.raise_on_delete_index: Exception | None = None
         self.raise_on_delete_vectors: Exception | None = None
+        self.raise_on_query_vectors: Exception | None = None
 
     def create_index(self, **kwargs: Any) -> None:
         self.create_index_calls += 1
@@ -46,6 +47,11 @@ class _RecordingClient:
 
     def put_vectors(self, **kwargs: Any) -> None:
         self.put_vectors_calls.append(len(kwargs["vectors"]))
+
+    def query_vectors(self, **kwargs: Any) -> dict[str, Any]:
+        if self.raise_on_query_vectors is not None:
+            raise self.raise_on_query_vectors
+        return {"vectors": []}
 
     def delete_vectors(self, **kwargs: Any) -> None:
         if self.raise_on_delete_vectors is not None:
@@ -122,3 +128,22 @@ def test_delete_vectors_if_present_is_a_no_op_for_an_empty_key_list(
     vector_index, client = index
     vector_index.delete_vectors_if_present("idx", [])
     assert client.delete_vectors_calls == []
+
+
+def test_query_returns_no_hits_for_a_missing_index(
+    index: tuple[VectorIndex, _RecordingClient],
+) -> None:
+    """A project with zero ingested documents has never run `EnsureIndex`, so its first
+    question's `retrieve()` call queries an index that doesn't exist yet — found live as a
+    crashed answer turn (`NotFoundException` from a real `query_vectors` call), invisible offline
+    because `FakeVectorIndex.query()` never raises on a missing index at all."""
+    vector_index, client = index
+    client.raise_on_query_vectors = _FakeNotFoundError()
+    assert vector_index.query("idx", [0.0] * 8, top_k=10) == []
+
+
+def test_query_reraises_other_errors(index: tuple[VectorIndex, _RecordingClient]) -> None:
+    vector_index, client = index
+    client.raise_on_query_vectors = ValueError("not a not-found")
+    with pytest.raises(ValueError, match="not a not-found"):
+        vector_index.query("idx", [0.0] * 8, top_k=10)

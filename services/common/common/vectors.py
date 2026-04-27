@@ -22,6 +22,13 @@ three call sites need genuinely idempotent behavior confirmed live (`smoke_s3vec
 document/project that was never ingested has no index to clean up); `delete_vectors` on an index
 that *does* exist, given keys that don't, is already a silent no-op with no exception — so only
 the index-missing case needs catching.
+
+`query_vectors` on an index that does not exist **also** raises `NotFoundException` — the fourth
+idempotent case, found live via a project with zero ingested documents: `answering/retrieve.py`
+calls `query()` unconditionally on every turn, including the first question ever asked in a
+brand-new project, before `EnsureIndex` has ever run for it. `query()` treats a missing index the
+same way `FakeVectorIndex.query()` already did (empty hit list) rather than crashing the turn —
+this divergence was invisible offline because the fake never raises on a missing index at all.
 """
 
 from __future__ import annotations
@@ -139,7 +146,10 @@ class VectorIndex:
         }
         if filter is not None:
             kwargs["filter"] = filter
-        response = self._client.query_vectors(**kwargs)
+        try:
+            response = self._client.query_vectors(**kwargs)
+        except self._client.exceptions.NotFoundException:
+            return []
         return [
             VectorMatch(key=v["key"], metadata=v.get("metadata", {}), distance=v.get("distance"))
             for v in response.get("vectors", [])

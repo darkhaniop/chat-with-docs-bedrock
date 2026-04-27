@@ -59,7 +59,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:55339057187799c3c293ffd44d947fe2d0041dc05b7763c4cae5294dfb94dc48",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:0be657dd4bc1fba34ff3031bed7eb3fc30caa777b7e5aff9ecde971736b31ce5",
           },
         },
         "Environment": {
@@ -321,7 +321,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:e7d5156c6862781943460be0f13645c5a8acd350a6362caa13c573eed3b7f161",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3940652bef2434f9f7347f857e58039af724e7688c2799f3203e32989948b836",
           },
         },
         "Environment": {
@@ -639,7 +639,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:e7d5156c6862781943460be0f13645c5a8acd350a6362caa13c573eed3b7f161",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3940652bef2434f9f7347f857e58039af724e7688c2799f3203e32989948b836",
           },
         },
         "Environment": {
@@ -2452,7 +2452,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:75d519934c70e8abb578610c91a6f02292544d3195250599747a3517517c52a8",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:606cd6d04755fcaf6a0c08ace6f115b19b2862679e31435393f026cc30d7a859",
           },
         },
         "Environment": {
@@ -2664,7 +2664,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:75d519934c70e8abb578610c91a6f02292544d3195250599747a3517517c52a8",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:606cd6d04755fcaf6a0c08ace6f115b19b2862679e31435393f026cc30d7a859",
           },
         },
         "Environment": {
@@ -2873,7 +2873,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:75d519934c70e8abb578610c91a6f02292544d3195250599747a3517517c52a8",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:606cd6d04755fcaf6a0c08ace6f115b19b2862679e31435393f026cc30d7a859",
           },
         },
         "Environment": {
@@ -3033,7 +3033,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:75d519934c70e8abb578610c91a6f02292544d3195250599747a3517517c52a8",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:606cd6d04755fcaf6a0c08ace6f115b19b2862679e31435393f026cc30d7a859",
           },
         },
         "Environment": {
@@ -3193,7 +3193,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:75d519934c70e8abb578610c91a6f02292544d3195250599747a3517517c52a8",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:606cd6d04755fcaf6a0c08ace6f115b19b2862679e31435393f026cc30d7a859",
           },
         },
         "Environment": {
@@ -3444,7 +3444,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:75d519934c70e8abb578610c91a6f02292544d3195250599747a3517517c52a8",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:606cd6d04755fcaf6a0c08ace6f115b19b2862679e31435393f026cc30d7a859",
           },
         },
         "Environment": {
@@ -3656,7 +3656,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:75d519934c70e8abb578610c91a6f02292544d3195250599747a3517517c52a8",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:606cd6d04755fcaf6a0c08ace6f115b19b2862679e31435393f026cc30d7a859",
           },
         },
         "Environment": {
@@ -3816,7 +3816,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:e7d5156c6862781943460be0f13645c5a8acd350a6362caa13c573eed3b7f161",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3940652bef2434f9f7347f857e58039af724e7688c2799f3203e32989948b836",
           },
         },
         "Environment": {
@@ -4008,7 +4008,7 @@ exports[`CwdComputeStack matches the committed template snapshot 1`] = `
         ],
         "Code": {
           "ImageUri": {
-            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:e7d5156c6862781943460be0f13645c5a8acd350a6362caa13c573eed3b7f161",
+            "Fn::Sub": "123456789012.dkr.ecr.us-east-1.\${AWS::URLSuffix}/cdk-hnb659fds-container-assets-123456789012-us-east-1:3940652bef2434f9f7347f857e58039af724e7688c2799f3203e32989948b836",
           },
         },
         "Environment": {

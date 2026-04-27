@@ -6,11 +6,27 @@ export function documentsKey(projectId: string) {
   return ["projects", projectId, "documents"] as const;
 }
 
+const TERMINAL_DOCUMENT_STATUSES = new Set(["READY", "FAILED"]);
+const DOCUMENT_POLL_INTERVAL_MS = 3000;
+
 export function useDocuments(projectId: string | null) {
   return useQuery({
     queryKey: documentsKey(projectId ?? ""),
     queryFn: () => apiJson<Page<Document>>(`/projects/${projectId}/documents`),
     enabled: projectId !== null,
+    // Mirrors `ChatPane`'s reconciliation poll (docs/06-frontend.md#reconnection-and-
+    // reconciliation): the project channel's `document.status`/`document.ready`/`document.failed`
+    // events are a latency optimisation, not the only way this ever updates. A channel
+    // subscription can be fully connected while silently never delivering (found live for the
+    // conversation channel — same AppSync Events mechanism, same failure mode) — without this,
+    // a document stuck mid-ingestion has no other path to ever show `Ready`.
+    refetchInterval: (query) => {
+      const items = query.state.data?.items;
+      if (items === undefined) return false;
+      return items.some((doc) => !TERMINAL_DOCUMENT_STATUSES.has(doc.status))
+        ? DOCUMENT_POLL_INTERVAL_MS
+        : false;
+    },
   });
 }
 
