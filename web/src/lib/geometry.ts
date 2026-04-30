@@ -3,9 +3,7 @@ import type { Rect } from "../api/types";
 /**
  * docs/02-data-model.md#coordinate-systems / docs/06-frontend.md#pdf-viewer-and-highlighting:
  * the one place canonical PDF-user-space points (origin top-left, y increasing downward) get
- * converted to viewport CSS pixels. pdf.js viewports use a bottom-left origin, so y is flipped
- * using the page height before handing off to `convertToViewportRectangle` — nothing else in
- * this codebase multiplies by `viewport.scale`.
+ * converted to viewport CSS pixels.
  */
 export interface ViewportRect {
   left: number;
@@ -15,34 +13,23 @@ export interface ViewportRect {
 }
 
 /**
- * The only two `pdfjs-dist` `PageViewport` members this conversion needs. Deliberately narrower
- * than importing the `PageViewport` class type: `PageViewport` itself isn't part of pdfjs-dist's
- * runtime export surface (only obtainable via a real `page.getViewport(...)` call, never
- * constructed directly — see `geometry.test.ts`'s comment), and a real instance satisfies this
- * interface structurally, so callers pass it straight through with no cast.
+ * The only `pdfjs-dist` `PageViewport` member this conversion needs. A real instance (from
+ * `page.getViewport(...)`) satisfies this structurally, so callers pass it straight through with
+ * no cast — narrower than importing `PageViewport` itself, which isn't part of pdfjs-dist's
+ * runtime export surface anyway (only obtainable via a real `getViewport()` call).
  */
 export interface ViewportLike {
-  viewBox: number[];
-  convertToViewportRectangle(rect: number[]): number[];
+  scale: number;
 }
 
 export function toViewportRect(rect: Rect, viewport: ViewportLike): ViewportRect {
   const [x0, y0, x1, y1] = rect;
-  // `viewBox`/`convertToViewportRectangle` are plain `number[]` (pdf.js's own typings, not
-  // tuples) but always length 4 in practice — a page's bounding box and a converted rectangle
-  // both have exactly two corners' worth of coordinates.
-  const h = viewport.viewBox[3]! - viewport.viewBox[1]!;
-  const [a, b, c, d] = viewport.convertToViewportRectangle([x0, h - y1, x1, h - y0]) as [
-    number,
-    number,
-    number,
-    number,
-  ];
+  const { scale } = viewport;
   return {
-    left: Math.min(a, c),
-    top: Math.min(b, d),
-    width: Math.abs(c - a),
-    height: Math.abs(d - b),
+    left: x0 * scale,
+    top: y0 * scale,
+    width: (x1 - x0) * scale,
+    height: (y1 - y0) * scale,
   };
 }
 

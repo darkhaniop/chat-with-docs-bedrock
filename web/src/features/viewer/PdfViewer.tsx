@@ -107,7 +107,7 @@ export function PdfViewer({
     if (selection === null) return;
     const target = pageRefs.current.get(selection.pageNumber);
     target?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [selection]);
+  }, [selection, pages]);
 
   if (error !== null) {
     return <p className="p-4 text-sm text-red-600">{error}</p>;

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiJson } from "../client";
 import type { Conversation, Message, Page, PostMessageAccepted } from "../types";
@@ -36,6 +37,16 @@ export function useActiveConversation(projectId: string | null) {
   const { data, isLoading } = useConversations(projectId);
   const createConversation = useCreateConversation(projectId ?? "");
   const existing = data?.items[0] ?? null;
+
+  // Eagerly create a conversation as soon as a project is selected and none exists yet, rather
+  // than waiting for the first Send click.
+  const attemptedProjectId = useRef<string | null>(null);
+  useEffect(() => {
+    if (projectId === null || isLoading || existing !== null) return;
+    if (attemptedProjectId.current === projectId) return;
+    attemptedProjectId.current = projectId;
+    createConversation.mutate();
+  }, [projectId, isLoading, existing]);
 
   return {
     conversation: existing,

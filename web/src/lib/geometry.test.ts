@@ -1,48 +1,63 @@
 import { Util } from "pdfjs-dist";
 import { describe, expect, it } from "vitest";
-import {
-  toImageViewportRect,
-  toViewportRect,
-  type ViewportLike,
-  type ViewportRect,
-} from "./geometry";
+import { toImageViewportRect, toViewportRect, type ViewportRect } from "./geometry";
 import type { Rect } from "../api/types";
 
 /**
- * Mirrors services/common/tests/test_geometry.py's round-trip properties
- * (docs/08-testing.md#geometry-tests) on the TypeScript side of the same conversion.
+ * `toViewportRect` itself only needs `{ scale }` (see geometry.ts's own comment for why: a
+ * canonical rect is already fully rotation-normalised by the time it reaches the frontend, so
+ * the conversion is a plain per-axis scale, nothing rotation-aware). The oracle below exists
+ * only to *cross-check* that claim against pdf.js's own rotation-aware transform.
  *
  * `PageViewport` (the class real code gets from `page.getViewport(...)`) is not part of
  * `pdfjs-dist`'s runtime export surface — only its type is (confirmed against the installed
  * 5.5.207 package: `pdf.mjs`'s own `export { ... }` statement has no `PageViewport` binding,
  * only `Util`, `getXfaPageViewport`, etc.), and actually loading a real PDF through
  * `getDocument(...)` in this project's jsdom-based vitest environment hits a chain of
- * Node-vs-browser gaps in pdf.js's non-worker fallback path (`Promise.try`, a `DOMMatrix`
- * dependency at module scope, and an internal hashing helper) deep enough that "just load a
- * real PDF" stopped being a fast, reliable unit test. Instead, this builds a `ViewportLike`
- * test double whose transform matrix is copied verbatim from `PageViewport`'s own constructor
- * in the installed `pdfjs-dist@5.5.207` (`node_modules/pdfjs-dist/build/pdf.mjs`, `class
- * PageViewport`) and whose point transformation calls pdf.js's real, runtime-exported
- * `Util.applyTransform`/`applyInverseTransform` — so the only thing not "real pdf.js" here is
- * the one-time act of constructing the matrix, not the math applied to it. Re-sync
- * `makeViewport` below if a future `pdfjs-dist` upgrade changes `PageViewport`'s transform
- * formula (unlikely — it hasn't changed across major versions).
+ * Node-vs-browser gaps in pdf.js's non-worker fallback path deep enough that "just load a real
+ * PDF" stopped being a fast, reliable unit test (see the pdf.js finding in CLAUDE.md). Instead,
+ * this builds the transform matrix by hand, copied verbatim from `PageViewport`'s own
+ * constructor in the installed `pdfjs-dist@5.5.207` (`node_modules/pdfjs-dist/build/pdf.mjs`,
+ * `class PageViewport`, the `rotateA/B/C/D` switch on `rotation % 360`), and applies it via
+ * pdf.js's real, runtime-exported `Util.applyTransform` — so the only thing not "real pdf.js"
+ * here is the one-time act of constructing the matrix, not the math applied to it. Re-sync if a
+ * future `pdfjs-dist` upgrade changes `PageViewport`'s transform formula (unlikely — it hasn't
+ * changed across major versions, and this exact formula was independently confirmed live against
+ * a real browser's real `page.getViewport({scale})` for `rotated.pdf` before this file was
+ * written this way).
  */
-function makeViewport(pageWidth: number, pageHeight: number, scale: number): ViewportLike {
+function oracleTransform(
+  pageWidth: number,
+  pageHeight: number,
+  scale: number,
+  rotation: 0 | 90 | 180 | 270,
+): number[] {
   const viewBox = [0, 0, pageWidth, pageHeight];
   const centerX = (viewBox[2]! + viewBox[0]!) / 2;
   const centerY = (viewBox[3]! + viewBox[1]!) / 2;
-  // rotation 0, dontFlip false — the only case this app's viewer ever asks pdf.js for (rotation
-  // is normalised at ingest time, never at render time, per docs/02-data-model.md).
-  const rotateA = 1;
-  const rotateB = 0;
-  const rotateC = 0;
-  const rotateD = -1;
-  // rotateA !== 0 (rotation 0 or 180) branch of PageViewport's constructor — see the module
-  // comment above for exactly which source lines this mirrors.
-  const offsetCanvasX = Math.abs(centerX - viewBox[0]!) * scale;
-  const offsetCanvasY = Math.abs(centerY - viewBox[1]!) * scale;
-  const transform = [
+  let rotateA: number, rotateB: number, rotateC: number, rotateD: number;
+  switch (rotation) {
+    case 180:
+      [rotateA, rotateB, rotateC, rotateD] = [-1, 0, 0, 1];
+      break;
+    case 90:
+      [rotateA, rotateB, rotateC, rotateD] = [0, 1, 1, 0];
+      break;
+    case 270:
+      [rotateA, rotateB, rotateC, rotateD] = [0, -1, -1, 0];
+      break;
+    default:
+      [rotateA, rotateB, rotateC, rotateD] = [1, 0, 0, -1];
+  }
+  let offsetCanvasX: number, offsetCanvasY: number;
+  if (rotateA === 0) {
+    offsetCanvasX = Math.abs(centerY - viewBox[1]!) * scale;
+    offsetCanvasY = Math.abs(centerX - viewBox[0]!) * scale;
+  } else {
+    offsetCanvasX = Math.abs(centerX - viewBox[0]!) * scale;
+    offsetCanvasY = Math.abs(centerY - viewBox[1]!) * scale;
+  }
+  return [
     rotateA * scale,
     rotateB * scale,
     rotateC * scale,
@@ -50,41 +65,14 @@ function makeViewport(pageWidth: number, pageHeight: number, scale: number): Vie
     offsetCanvasX - rotateA * scale * centerX - rotateC * scale * centerY,
     offsetCanvasY - rotateB * scale * centerX - rotateD * scale * centerY,
   ];
-  return {
-    viewBox,
-    convertToViewportRectangle(rect: number[]): number[] {
-      const topLeft = [rect[0]!, rect[1]!];
-      Util.applyTransform(topLeft, transform);
-      const bottomRight = [rect[2]!, rect[3]!];
-      Util.applyTransform(bottomRight, transform);
-      return [topLeft[0]!, topLeft[1]!, bottomRight[0]!, bottomRight[1]!];
-    },
-    convertToPdfPoint(x: number, y: number): number[] {
-      const p = [x, y];
-      Util.applyInverseTransform(p, transform);
-      return p;
-    },
-  } as ViewportLike & { convertToPdfPoint(x: number, y: number): number[] };
 }
 
-// Inverse of toViewportRect, used only by this round-trip test.
-function fromViewportRect(
-  vrect: ViewportRect,
-  viewport: ReturnType<typeof makeViewport>,
-  pageHeight: number,
-): Rect {
-  const withInverse = viewport as unknown as { convertToPdfPoint(x: number, y: number): number[] };
-  const [px0, py0] = withInverse.convertToPdfPoint(vrect.left, vrect.top) as [number, number];
-  const [px1, py1] = withInverse.convertToPdfPoint(
-    vrect.left + vrect.width,
-    vrect.top + vrect.height,
-  ) as [number, number];
-  return [
-    Math.min(px0, px1),
-    pageHeight - Math.max(py0, py1),
-    Math.max(px0, px1),
-    pageHeight - Math.min(py0, py1),
-  ];
+function oracleConvertToViewportRectangle(rect: number[], transform: number[]): number[] {
+  const topLeft = [rect[0]!, rect[1]!];
+  Util.applyTransform(topLeft, transform);
+  const bottomRight = [rect[2]!, rect[3]!];
+  Util.applyTransform(bottomRight, transform);
+  return [topLeft[0]!, topLeft[1]!, bottomRight[0]!, bottomRight[1]!];
 }
 
 describe("toViewportRect", () => {
@@ -92,47 +80,106 @@ describe("toViewportRect", () => {
   const pageHeight = 792.0;
   const rect: Rect = [72.0, 640.2, 511.4, 655.8];
 
-  it.each([0.5, 1.0, 2.0])(
-    "round-trips canonical -> viewport -> canonical at scale %s",
-    (scale) => {
-      const viewport = makeViewport(pageWidth, pageHeight, scale);
-      const vrect = toViewportRect(rect, viewport);
-      const back = fromViewportRect(vrect, viewport, pageHeight);
-      for (let i = 0; i < 4; i++) {
-        // within 0.5 px, matching the Python property test's tolerance for the equivalent
-        // round-trip (services/common/tests/test_geometry.py)
-        expect(back[i]).toBeCloseTo(rect[i]!, 0);
-      }
-    },
-  );
+  it.each([0.5, 1.0, 2.0])("is a pure per-axis scale of the canonical rect (scale %s)", (scale) => {
+    const vrect = toViewportRect(rect, { scale });
+    expect(vrect).toEqual({
+      left: 72.0 * scale,
+      top: 640.2 * scale,
+      width: (511.4 - 72.0) * scale,
+      height: (655.8 - 640.2) * scale,
+    });
+  });
 
   it("scales viewport pixel dimensions linearly with the viewport scale", () => {
-    const at1x = toViewportRect(rect, makeViewport(pageWidth, pageHeight, 1.0));
-    const at2x = toViewportRect(rect, makeViewport(pageWidth, pageHeight, 2.0));
-    expect(at2x.width).toBeCloseTo(at1x.width * 2, 1);
-    expect(at2x.height).toBeCloseTo(at1x.height * 2, 1);
+    const at1x = toViewportRect(rect, { scale: 1.0 });
+    const at2x = toViewportRect(rect, { scale: 2.0 });
+    expect(at2x.width).toBeCloseTo(at1x.width * 2, 5);
+    expect(at2x.height).toBeCloseTo(at1x.height * 2, 5);
   });
 
   it("keeps a rect near the top of the page near viewport y=0 at scale 1", () => {
-    const viewport = makeViewport(pageWidth, pageHeight, 1.0);
     const topRect: Rect = [72.0, 10.0, 200.0, 30.0]; // near the canonical top edge
-    const vrect = toViewportRect(topRect, viewport);
-    expect(vrect.top).toBeCloseTo(10.0, 0);
+    const vrect = toViewportRect(topRect, { scale: 1.0 });
+    expect(vrect.top).toBeCloseTo(10.0, 5);
   });
 
   it("matches a hand-computed example at scale 1", () => {
-    // At scale 1, offsets 0, rotation 0: toViewportRect's own y-flip (canonical top-left ->
-    // pdf.js's native bottom-left space) composes with convertToViewportRectangle's internal
-    // flip (bottom-left -> screen top-left) into the identity, since both flips mirror around
-    // the same page height. So a canonical rect maps to numerically the same left/top/width/
-    // height at scale 1 — both conventions are top-left, y-down, just different units that
-    // happen to coincide here.
-    const viewport = makeViewport(pageWidth, pageHeight, 1.0);
-    const vrect = toViewportRect(rect, viewport);
-    expect(vrect.left).toBeCloseTo(72.0, 1);
-    expect(vrect.top).toBeCloseTo(640.2, 1);
-    expect(vrect.width).toBeCloseTo(511.4 - 72.0, 1);
-    expect(vrect.height).toBeCloseTo(655.8 - 640.2, 1);
+    const vrect = toViewportRect(rect, { scale: 1.0 });
+    expect(vrect.left).toBeCloseTo(72.0, 5);
+    expect(vrect.top).toBeCloseTo(640.2, 5);
+    expect(vrect.width).toBeCloseTo(511.4 - 72.0, 5);
+    expect(vrect.height).toBeCloseTo(655.8 - 640.2, 5);
+  });
+
+  describe("rotation", () => {
+    it.each([90, 180, 270] as const)(
+      "matches pdf.js's real rotation-aware transform applied to the raw pre-normalisation rect (rotation %s)",
+      (rotation) => {
+        // A synthetic raw (pre-rotation-normalisation) rect in the *original*, unrotated page's
+        // own top-left/y-down content-stream space.
+        const rawRect: Rect = [72.0, 82.8, 223.18, 104.78];
+
+        function rotateCorner(x: number, y: number): [number, number] {
+          switch (rotation) {
+            case 90:
+              return [pageHeight - y, x];
+            case 180:
+              return [pageWidth - x, pageHeight - y];
+            default:
+              return [y, pageWidth - x];
+          }
+        }
+        const [rx0, ry0] = rotateCorner(rawRect[0], rawRect[1]);
+        const [rx1, ry1] = rotateCorner(rawRect[2], rawRect[3]);
+        const canonicalRect: Rect = [
+          Math.min(rx0, rx1),
+          Math.min(ry0, ry1),
+          Math.max(rx0, rx1),
+          Math.max(ry0, ry1),
+        ];
+
+        const scale = 1.5;
+        const rotatedPageWidth = rotation === 180 ? pageWidth : pageHeight;
+        const rotatedPageHeight = rotation === 180 ? pageHeight : pageWidth;
+        const transform = oracleTransform(pageWidth, pageHeight, scale, rotation);
+        // The oracle's `convertToViewportRectangle` expects genuine PDF-native (bottom-left,
+        // y-up) input, within the *raw*, unrotated page's own frame.
+        const nativeRect = [
+          rawRect[0],
+          pageHeight - rawRect[3],
+          rawRect[2],
+          pageHeight - rawRect[1],
+        ];
+        const [a, b, c, d] = oracleConvertToViewportRectangle(nativeRect, transform);
+        const expected: ViewportRect = {
+          left: Math.min(a!, c!),
+          top: Math.min(b!, d!),
+          width: Math.abs(c! - a!),
+          height: Math.abs(d! - b!),
+        };
+
+        const actual = toViewportRect(canonicalRect, { scale });
+
+        expect(actual.left).toBeCloseTo(expected.left, 5);
+        expect(actual.top).toBeCloseTo(expected.top, 5);
+        expect(actual.width).toBeCloseTo(expected.width, 5);
+        expect(actual.height).toBeCloseTo(expected.height, 5);
+        expect(actual.top + actual.height).toBeLessThanOrEqual(rotatedPageHeight * scale + 0.01);
+        expect(actual.left + actual.width).toBeLessThanOrEqual(rotatedPageWidth * scale + 0.01);
+      },
+    );
+
+    it("matches services/ingestion/tests/test_extract.py's hand-checked rotated.pdf title rect", () => {
+      const canonicalRect: Rect = [687.22, 72.0, 709.2, 223.18];
+      const vrect = toViewportRect(canonicalRect, { scale: 1 });
+      expect(vrect.left).toBeCloseTo(687.22, 1);
+      expect(vrect.top).toBeCloseTo(72.0, 1);
+      expect(vrect.width).toBeCloseTo(21.98, 1);
+      expect(vrect.height).toBeCloseTo(151.18, 1);
+      // And critically: inside the canonical 792×612 page box, not off the bottom of it.
+      expect(vrect.top + vrect.height).toBeLessThanOrEqual(612);
+      expect(vrect.left + vrect.width).toBeLessThanOrEqual(792);
+    });
   });
 });
 
