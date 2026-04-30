@@ -56,7 +56,12 @@ test.describe("chat citations", () => {
     await expect(page.getByRole("button", { name: "Close viewer" })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText("born-digital.pdf", { exact: false })).toBeVisible();
+    // Scoped to the viewer panel, not the whole page: the sidebar can contain leftover
+    // integration-test projects literally named e.g. "cwd-integration-all-fixtures-
+    // born-digital.pdf", whose accessible text also contains this substring.
+    await expect(
+      page.getByTestId("viewer").getByText("born-digital.pdf", { exact: false }),
+    ).toBeVisible();
 
     const highlight = page.locator('[data-page-number] [aria-hidden="true"] > div').first();
     await expect(highlight).toBeVisible({ timeout: 10_000 });

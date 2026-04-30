@@ -29,7 +29,18 @@ export function PdfViewer({
   // switching documents remounts it outright rather than relying on this effect to reset state.
   useEffect(() => {
     let cancelled = false;
-    const loadingTask = getDocument({ url: sourceUrl, withCredentials: false });
+    // `isImageDecoderSupported: false` is explicit, not a default left alone: pdf.js's own
+    // default (`!isNodeJS && (isFirefox || !globalThis.chrome)`) turns this *on* for any
+    // non-Chromium browser, including WebKit, routing JPEG-filtered (`DCTDecode`) images through
+    // the browser's native `ImageDecoder` (WebCodecs) API instead of pdf.js's own pure-JS
+    // decoder. Chromium was never affected (its branch of pdf.js's default expression is always
+    // `false`, since `globalThis.chrome` exists there) — this is a WebKit-only path, but any real
+    // Safari user opening a scanned/OCR'd document would hit the same crash without this.
+    const loadingTask = getDocument({
+      url: sourceUrl,
+      withCredentials: false,
+      isImageDecoderSupported: false,
+    });
     loadingTask.promise
       .then(async (loaded) => {
         if (cancelled) return;
