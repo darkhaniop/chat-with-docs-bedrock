@@ -133,7 +133,7 @@ export function ChatPane({
   const isBusy = stream !== null && !TERMINAL_STATUSES.has(stream.status);
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex h-full flex-col overflow-hidden">
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
       </div>

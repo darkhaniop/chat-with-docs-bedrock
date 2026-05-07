@@ -46,7 +46,7 @@ export function ViewerPane({
   }, [onClose]);
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden border-l border-slate-200">
+    <div className="flex h-full flex-col overflow-hidden border-l border-slate-200">
       <div className="flex items-center justify-between border-b border-slate-200 p-2">
         <span className="truncate text-sm font-medium" title={document?.filename}>
           {document?.filename ?? "Loading…"} · page {pageNumber}

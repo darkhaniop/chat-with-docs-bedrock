@@ -57,7 +57,7 @@ function Workspace({ email, onSignOut }: { email: string | undefined; onSignOut:
   };
 
   return (
-    <div className="flex min-h-screen flex-col dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex h-screen flex-col overflow-hidden dark:bg-slate-950 dark:text-slate-100">
       <header className="flex items-center justify-between border-b border-slate-200 p-3 dark:border-slate-800">
         <h1 className="text-lg font-medium">chat-with-docs-bedrock</h1>
         <div className="flex items-center gap-3">

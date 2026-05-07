@@ -65,7 +65,7 @@ export function DocumentList({ projectId }: { projectId: string }) {
   });
 
   return (
-    <div className="flex flex-1 flex-col gap-3 p-3">
+    <div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
       <Dropzone projectId={projectId} />
 
       {isLoading && <p className="text-sm text-slate-500">Loading documents…</p>}

@@ -22,8 +22,7 @@ export function PdfViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef(new Map<number, HTMLDivElement>());
 
-  // docs/06: "fetched with the presigned source-url, with withCredentials: false" — no cookies
-  // or Authorization header belong on a presigned S3 URL; its signature is the credential.
+  // No cookies or the auth header belong on a presigned S3 URL; its signature is the credential.
   // State only changes from the async callbacks below, never synchronously in the effect body
   // (react-hooks/set-state-in-effect) — callers should `key` this component by document id so
   // switching documents remounts it outright rather than relying on this effect to reset state.
@@ -102,11 +101,23 @@ export function PdfViewer({
     return () => observer.disconnect();
   }, [pages.length]);
 
-  // Citation click -> scroll to page (docs/06-frontend.md#rendering-citations, step 2).
+  // Depends on `pages`, not just `selection`: when the citation's document differs from
+  // whatever was (or wasn't) already in the viewer, `App.tsx`'s `Workspace` keys `PdfViewer` by
+  // `documentId`, so a document switch *remounts* this component outright. On that fresh mount,
+  // this effect's first run sees the *same* `selection` object the click already set but `pages`
+  // is still `[]`. Re-running once `pages` populates fixes the missed case without affecting the
+  // already-working one (re-clicking a citation on an already-loaded document still scrolls
+  // immediately, since `selection` itself also changed there).
   useEffect(() => {
     if (selection === null) return;
+    const container = containerRef.current;
     const target = pageRefs.current.get(selection.pageNumber);
-    target?.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (container === null || target === undefined) return;
+    const delta = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    container.scrollTo({
+      top: container.scrollTop + delta,
+      behavior: "smooth",
+    });
   }, [selection, pages]);
 
   if (error !== null) {
