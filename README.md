@@ -139,11 +139,20 @@ cd infra && npx cdk deploy --all --context env=dev
 
 ## Limitations
 
-I do not recommend deploying this project as a publicly exposed service, deploy it only for
-testing or internal/personal use. Currently hardrening and polish stages have not been
-implemented. Here are some of the existing limitations:
+I do not recommend deploying this project as a publicly exposed service, deploy it
+**only for testing or internal/personal use**. Currently hardrening and polish stages have not
+been implemented. Here are some of the existing limitations:
 
 - **Guardrails and prompt injection.** Bedrock Guardrails are not wired up on input or output,
   so there is no automated defense against unsafe content or prompt injection yet.
 - **Rate limiting, resilience, and cost controls.** No per-user rate limits, reserved Lambda
   concurrency, DLQ failure handling, alarms, or cost dashboards exist yet.
+- **Embedding throttling.** Currently, there is no special handling of long document processing,
+  so only short document processing (embedding) will succeed.
+- **Retrieval and citation tuning.** The chunking/retrieval parameter sweep hasn't been run,
+  embedding-deduplication with chunk hash has not been implemented, and citation page accuracy
+  is currently about 91%.
+- **Conversation and document UX.** No conversation titles/history/switcher, no document
+  pinning/tagging, and no dedicated accessibility pass.
+- **Known live UI bugs.** Rotated-page citations sometimes don't highlight, no preview zooming,
+   an issue with token-by-token answer streaming, and possibly other issues.
