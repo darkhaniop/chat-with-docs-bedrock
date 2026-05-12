@@ -49,6 +49,48 @@ the source document.
 | Backend deps | uv workspace (Python 3.12) |
 | Testing | pytest, vitest, Playwright (chromium + webkit) |
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Browser: React 19 SPA (Vite, Tailwind, pdf.js viewer)                   │
+└───────┬──────────────────┬──────────────────┬──────────────────┬────────┘
+        │ site assets      │ OIDC + PKCE      │ JWT              │ WSS + JWT
+        ▼                  ▼                  ▼                  ▼
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│ CloudFront     │ │ Cognito        │ │ API Gateway    │ │ AppSync Events │
+│ + OAC          │ │ user pool      │ │ HTTP API       │ │ WebSocket      │
+│ S3: SPA bundle │ │ Managed Login  │ │ JWT authorizer │ │ pub/sub        │
+└────────────────┘ └────────────────┘ └───────┴────────┘ └───────┴────────┘
+                                              │                  └───────────┐
+                                              ▼              publish (SigV4) │
+                                   ┌──────────┬───────────┐                  │
+                                   │ Lambda: api          │                  │
+                                   │ control plane only   │                  │
+                                   │ no Bedrock access    │                  │
+                                   └─────┬──────────┬─────┘                  │
+                ┌────────────────────────┘          └────┐                   │
+                │ StartExecution                         │ enqueue           │
+                ▼                                        ▼                   │
+┌───────────────┬────────────────┐       ┌───────────────┬────────────────┐  │
+│ Step Functions (Standard)      │       │ SQS: answer-queue + DLQ        │  │
+│ probe -> page -> chunk -> embed│       │ -> Lambda: answering           │  │
+│ -> finalize, Textract OCR      │       │ rewrite -> retrieve -> generate│  │
+└───────────────┴────────────────┘       └───────────────┴────────────────┘  │
+                ├────────────────────────────────────────┼───────────────────┘
+                │                                        │
+        ┌───────┴──────────┬──────────────────┬──────────┴───────┐
+        ▼                  ▼                  ▼                  ▼
+┌───────┬────────┐ ┌───────┬────────┐ ┌───────┬────────┐ ┌───────┬────────┐
+│ DynamoDB       │ │ S3: documents  │ │ S3 Vectors     │ │ Bedrock: Nova  │
+│ single table   │ │ raw + renders  │ │ one index per  │ │ Haiku, Sonnet  │
+│ citation maps  │ │ artifacts      │ │ project        │ │ (Citations API)│
+└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
+```
+
+Full component responsibilities and request-flow sequence diagrams live in
+[docs/01-architecture.md](docs/01-architecture.md).
+
 ## Quick start
 
 Prerequisites are listed in [docs/10-roadmap.md § Human prerequisites](docs/10-roadmap.md#human-prerequisites).
